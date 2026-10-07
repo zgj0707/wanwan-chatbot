@@ -444,6 +444,16 @@
   }
 
   /* ── 晚晚档案 ─────────────────────────────── */
+  /* 档案锚点用英文 key 存储，页面上要显示中文 */
+  const personaLabels = {
+    name: "名字", nickname: "昵称", age: "年龄", city: "城市",
+    occupation: "职业", cat_name: "猫名", cat_breed: "猫品种",
+    virtual_identity: "虚拟身份", temperament: "性格", boundary: "相处边界",
+    catchphrases: "口头禅", likes: "喜欢的", dislikes: "不喜欢的",
+  };
+  function personaLabel(key) {
+    return personaLabels[key] || key;
+  }
   async function loadPersonaView() {
     setViewNotice("persona-view", "正在读取档案…");
     try {
@@ -460,7 +470,7 @@
         els.personaDetails.append(card);
       };
       addPersonaCard("档案版本", `v${data.version}`);
-      for (const [key, value] of Object.entries(data.anchors || {})) addPersonaCard(key, value);
+      for (const [key, value] of Object.entries(data.anchors || {})) addPersonaCard(personaLabel(key), value);
       addPersonaCard("已确认喜欢", data.preferences?.likes || []);
       addPersonaCard("已确认不喜欢", data.preferences?.dislikes || []);
       addPersonaCard("原有人设爱好", data.preferences?.hobbies || []);
