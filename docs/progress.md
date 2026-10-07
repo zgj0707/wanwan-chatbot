@@ -1,6 +1,6 @@
 # Progress
 
-> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider iteration remains incomplete: B26 and B28 each completed 18/19 turns; B27 PER-07 passed as a targeted case; B29 PER-08 retest stopped at `UPSTREAM_AUTH`. User subjective behavior sign-off remains pending.
+> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider iteration remains incomplete: B26 and B28 each completed 18/19 turns; B27 PER-07 passed as a targeted case; B29 PER-08 retest stopped because the provider quota was exhausted (client reported `UPSTREAM_AUTH`). User subjective behavior sign-off remains pending.
 
 ## Project baseline
 
@@ -23,7 +23,7 @@
 
 ## Near-term roadmap
 
-1. After provider authentication is restored, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
+1. After the provider quota is replenished, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
 2. Review remaining user-facing behavior in `tests/fixtures/behavior_cases.json`, especially direct answers from confirmed memory, explicit virtual-role disclosure, and the user's preferred conversational tone.
 3. Continue desktop and narrow-screen review. Apply Shinsekai's dialogue/settings separation and per-component chat theme ideas; no Shinsekai code or assets are reused. Keep deferred P1 work out of scope until user feedback.
 
@@ -183,5 +183,5 @@
 
 - Added targeted guards for virtual identity, fixed identity, confirmed-fact recall, 年糕 ownership, and pressure after the user has been away. Confirmed-fact checks use only facts that remained in the current PromptBundle.
 - Kept provider repair within the PRD limit of two chat attempts per turn and shortened repair messages to reduce context-overflow risk.
-- B19–B29 used 343 provider attempts across independently capped batches. B26 and B28 each completed 18/19 turns; targeted B27 PER-07 passed; B29 PER-08 could not reach quality evaluation because of `UPSTREAM_AUTH`. All behavior fixture manual results remain NOT_RUN. See [acceptance.md](acceptance.md).
+- B19–B29 used 343 provider attempts across independently capped batches. B26 and B28 each completed 18/19 turns; targeted B27 PER-07 passed; B29 PER-08 could not reach quality evaluation because the provider quota was exhausted (client reported `UPSTREAM_AUTH`). All behavior fixture manual results remain NOT_RUN. See [acceptance.md](acceptance.md).
 
