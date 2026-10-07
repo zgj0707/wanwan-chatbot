@@ -15,23 +15,23 @@
       <button id="new-session" class="new-session" type="button">＋ 新对话</button>
       <div class="session-heading"><span>最近对话</span><label class="archive-toggle"><input id="show-archived" type="checkbox"> 已归档</label></div>
       <nav id="sessions" class="sessions" aria-label="对话"></nav>
-      <div class="sidebar-tools">
-        <p class="sidebar-section-label">管理</p>
+      <details class="sidebar-tools">
+        <summary>资料与设置</summary>
         <nav class="page-nav" aria-label="管理页面">
           <button class="page-link active" type="button" data-view="chat-view">返回对话</button>
           <button class="page-link" type="button" data-view="memory-view">记忆管理</button>
           <button class="page-link" type="button" data-view="persona-view">晚晚档案</button>
           <button class="page-link" type="button" data-view="diagnostics-view">设置与诊断</button>
         </nav>
-      </div>
-      <div class="local-note">仅本机使用 · 配置更改后需重启</div>
+        <p class="local-note">仅本机使用 · 配置更改后需重启</p>
+      </details>
     </aside>
     <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭对话列表"></button>
     <main class="chat-panel">
       <section id="chat-view" class="view chat-view" aria-label="对话">
         <header class="topbar">
-          <div class="topbar-heading"><button id="sidebar-toggle" class="mobile-menu-button" type="button" aria-label="打开对话列表" title="打开对话列表">☰</button><div><h1 id="session-title">新对话</h1><p id="time-context">东京时间</p></div></div>
-          <div class="topbar-badges"><span id="mode-badge" class="mode-badge">离线模拟</span><button id="archive-current" class="icon-button" type="button" aria-label="归档对话" title="归档对话">归档</button></div>
+          <div class="topbar-heading"><button id="sidebar-toggle" class="mobile-menu-button" type="button" aria-label="打开对话列表" title="打开对话列表">☰</button><div><h1 id="session-title">新对话</h1><p id="time-context">广州时间</p></div></div>
+          <div class="topbar-badges"><button id="archive-current" class="icon-button" type="button" aria-label="归档对话" title="归档对话">归档</button></div>
         </header>
         <div id="initiative-notice" class="initiative-notice hidden" role="status" aria-live="polite"></div>
         <section id="messages" class="messages" aria-live="polite" aria-label="消息记录"></section>
@@ -39,7 +39,7 @@
         <form id="composer" class="composer">
           <label class="sr-only" for="message-input">发送给苏晚</label>
           <textarea id="message-input" rows="1" maxlength="2000" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
-          <div class="composer-footer"><span>Enter 发送 · Shift+Enter 换行</span><div><button id="cancel-wait" class="text-button hidden" type="button">取消等待</button><button id="query-operation" class="text-button hidden" type="button">继续查询</button><button id="send-button" class="send-button" type="submit">发送</button></div></div>
+          <div class="composer-footer"><span>Enter 发送 · Shift+Enter 换行</span><div><button id="cancel-wait" class="text-button hidden" type="button">取消等待</button><button id="query-operation" class="text-button hidden" type="button">查看发送状态</button><button id="send-button" class="send-button" type="submit">发送</button></div></div>
         </form>
       </section>
 
@@ -104,7 +104,7 @@
       </section>
 
       <section id="diagnostics-view" class="view management-view hidden" aria-label="设置与诊断">
-        <header class="management-header"><h1>设置与诊断</h1><p>状态检查不会调用模型。测试模型会发送一次短请求并可能产生费用。</p></header>
+        <header class="management-header"><div class="management-title-row"><h1>设置与诊断</h1><span id="mode-badge" class="mode-badge">离线模拟</span></div><p>状态检查不会调用模型。测试模型会发送一次短请求并可能产生费用。</p></header>
         <div id="diagnostics-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <div id="diagnostics-summary" class="diagnostics-grid"></div>
         <section class="panel-card">

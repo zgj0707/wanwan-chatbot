@@ -108,10 +108,9 @@
   }
   function updateClock() {
     const dateText = new Intl.DateTimeFormat("zh-CN", {
-      timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", hour12: false,
+      timeZone: "Asia/Shanghai", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
     }).format(new Date());
-    els.time.textContent = `东京时间 ${dateText} · 苏晚所在时区：广州`;
+    els.time.textContent = `广州 · ${dateText}`;
   }
   function localTime(value) {
     if (!value) return "";
@@ -459,22 +458,28 @@
           : "检查已完成；没有符合条件的新生活进展。",
     );
   }
-  const initiativeReasons = {
-    DISABLED: "主动开场已关闭。",
-    QUIET_HOURS: "现在是安静时间，晚晚不会主动打扰。",
-    GUARD_ACTIVE: "晚晚目前想保持一点距离。",
-    LOW_ENERGY: "晚晚今天有些累，先不主动开场。",
-    COOLDOWN: "距离上次主动开场还不到六小时。",
-    NO_RECENT_EVENT: "最近没有新的生活经历，暂时没有合适的话题。",
-    WAITING_USER: "晚晚已经发过主动消息，等你回复后再继续。",
-    MODEL_FAILED: "主动开场暂时没有完成。",
-  };
+  function clearInitiativeNotice() {
+    els.initiativeNotice.replaceChildren();
+    els.initiativeNotice.classList.add("hidden");
+    els.initiativeNotice.classList.remove("error");
+  }
+  function appendTypingDots(container) {
+    const dots = make("span", "typing-dots");
+    dots.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < 3; index += 1) dots.append(make("span", "", " "));
+    container.append(dots);
+  }
+  function showInitiativeTyping() {
+    els.initiativeNotice.replaceChildren();
+    els.initiativeNotice.append(make("span", "typing-label", "晚晚正在想"));
+    appendTypingDots(els.initiativeNotice);
+    els.initiativeNotice.classList.remove("hidden", "error");
+  }
   async function requestInitiative(sessionId, generation) {
     if (!sessionId || pending || activeSession?.archived) return;
     initiativePendingSessions.add(sessionId);
     if (activeSessionId === sessionId) {
-      els.initiativeNotice.textContent = "正在查看最近的生活主题…";
-      els.initiativeNotice.classList.remove("hidden", "error");
+      showInitiativeTyping();
       renderPending();
     }
     try {
@@ -485,19 +490,15 @@
       });
       if (generation !== initiativeGeneration || activeSessionId !== sessionId) return;
       if (data.sent && data.assistant_message) {
-        els.initiativeNotice.textContent = "";
-        els.initiativeNotice.classList.add("hidden");
+        clearInitiativeNotice();
         appendMessage(data.assistant_message);
         await loadSessionsListOnly();
       } else {
-        els.initiativeNotice.textContent = initiativeReasons[data.reason] || "这次没有主动开场。";
-        els.initiativeNotice.classList.remove("hidden", "error");
+        clearInitiativeNotice();
       }
-    } catch (error) {
+    } catch {
       if (generation === initiativeGeneration && activeSessionId === sessionId) {
-        els.initiativeNotice.textContent = error.message || "无法检查主动开场状态。";
-        els.initiativeNotice.classList.remove("hidden");
-        els.initiativeNotice.classList.add("error");
+        clearInitiativeNotice();
       }
     } finally {
       initiativePendingSessions.delete(sessionId);
@@ -574,6 +575,7 @@
   async function selectSession(session) {
     closeSidebar();
     const entering = activeSessionId !== session.id;
+    clearInitiativeNotice();
     activeSessionId = session.id;
     activeSession = session;
     if (currentView !== "chat-view") switchView("chat-view");
@@ -603,14 +605,14 @@
     const { data } = await request(`/sessions/${activeSessionId}/messages?limit=50`);
     els.messages.replaceChildren();
     const items = data.items || [];
-    if (!items.length) {
+    if (!items.length && !(pending && pending.session_id === activeSessionId)) {
       const welcome = make("div", "empty-state");
       welcome.append(make("span", "welcome-mark", "晚"));
       welcome.append(make("p", "welcome-eyebrow", "SU WAN · 广州"));
       welcome.append(make("h2", "welcome-title", "今天想聊点什么？"));
       welcome.append(make("p", "welcome-copy", "工作、咖啡，或者今天心里那点小事。慢慢说就好。"));
       const suggestions = make("div", "prompt-suggestions");
-      for (const text of ["下班以后有点累，陪我聊会儿", "最近想练练手冲咖啡", "今天心情有点乱"]) {
+      for (const text of ["今天有点累", "想跟你说件小事", "随便聊聊吧"]) {
         const suggestion = make("button", "prompt-suggestion", text);
         suggestion.type = "button";
         suggestion.addEventListener("click", () => {
@@ -651,23 +653,37 @@
       els.queryOperation.classList.add("hidden");
       return;
     }
-    const card = make("div", "pending-card");
-    const label = pending.error ? `未发送 · ${pending.error.message || "本轮没有完成"}` : (pending.status === "pending" ? "正在处理 · 消息尚未计入历史" : "等待确认 · 消息尚未计入历史");
-    card.append(make("div", "", label));
-    card.append(make("div", "pending-text", pending.text));
-    const actions = make("div", "pending-actions");
-    if (pending.error && pending.error.retryable) {
-      const retry = make("button", "text-button", "使用相同编号重试");
-      retry.type = "button";
-      retry.addEventListener("click", () => sendPending(true));
-      actions.append(retry);
+    const outgoing = make("div", "message-row user pending-message");
+    const outgoingBody = make("div", "message-body");
+    outgoingBody.append(make("div", "bubble", pending.text));
+    outgoingBody.append(make("time", "message-time", pending.error ? "未送达" : "正在发送"));
+    outgoing.append(outgoingBody);
+    els.pending.append(outgoing);
+    if (pending.error) {
+      const card = make("div", "pending-card");
+      card.append(make("div", "", "这条消息暂时没能确认送达。"));
+      if (pending.error.message) card.append(make("div", "pending-detail", pending.error.message));
+      const actions = make("div", "pending-actions");
+      if (pending.error.retryable) {
+        const retry = make("button", "text-button", "再试一次");
+        retry.type = "button";
+        retry.addEventListener("click", () => sendPending(true));
+        actions.append(retry);
+      }
+      if (actions.childElementCount) card.append(actions);
+      els.pending.append(card);
+    } else {
+      const waiting = make("div", "message-row assistant waiting-message");
+      waiting.append(make("span", "avatar", "晚"));
+      const waitingBody = make("div", "message-body");
+      waitingBody.append(make("span", "message-author", "晚晚"));
+      const bubble = make("div", "bubble");
+      bubble.append(make("span", "typing-label", "正在想怎么回你"));
+      appendTypingDots(bubble);
+      waitingBody.append(bubble);
+      waiting.append(waitingBody);
+      els.pending.append(waiting);
     }
-    const check = make("button", "text-button", "查询状态");
-    check.type = "button";
-    check.addEventListener("click", () => checkOperation(true));
-    actions.append(check);
-    card.append(actions);
-    els.pending.append(card);
     els.send.disabled = true;
     els.input.disabled = true;
     els.queryOperation.classList.toggle("hidden", !pending.error);
