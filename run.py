@@ -37,8 +37,11 @@ def main() -> int:
 
     from app.main import create_app
 
-    url = f"http://{config.server.host}:{config.server.port}/settings"
-    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    # 打开聊天首页（"/"）。历史上的 /settings 是一个无样式的静态说明页，
+    # 新前端的设置中心已经收进界面内（齿轮按钮或 Ctrl+/），不再作为入口。
+    base_url = f"http://{config.server.host}:{config.server.port}"
+    print(f"苏晚晚 Chatbot 已启动：{base_url}/")
+    threading.Timer(0.8, lambda: webbrowser.open(f"{base_url}/")).start()
     uvicorn.run(
         create_app(config, project_dir=root),
         host=config.server.host,

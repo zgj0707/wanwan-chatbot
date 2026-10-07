@@ -144,13 +144,15 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .foot-link .foot-kbd { margin-left: auto; font-size: 10px; color: var(--faint); opacity: 0; transition: opacity var(--dur-fast); }
 .foot-link:hover .foot-kbd { opacity: 1; }
 .local-note { padding: 10px 6px 0; color: var(--faint); font-size: 10px; line-height: 1.6; }
+.ui-version { padding: 2px 6px 0; color: var(--faint); font-size: 10px; letter-spacing: .02em; }
+.ui-version span { font-variant-numeric: tabular-nums; }
 
 /* 折叠窄条模式（桌面） */
 .app-shell.rail .sidebar { padding: 20px 10px 14px; align-items: center; }
 .app-shell.rail .brand { justify-content: center; }
 .app-shell.rail .brand-text, .app-shell.rail .sidebar-search, .app-shell.rail .session-heading,
 .app-shell.rail .session-group-label, .app-shell.rail .sessions, .app-shell.rail .foot-label,
-.app-shell.rail .foot-kbd, .app-shell.rail .local-note { display: none; }
+.app-shell.rail .foot-kbd, .app-shell.rail .local-note, .app-shell.rail .ui-version { display: none; }
 .app-shell.rail .new-session { padding: 10px 0; width: 44px; }
 .app-shell.rail .new-session .label { display: none; }
 .app-shell.rail .sidebar-foot { width: 100%; }
