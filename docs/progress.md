@@ -1,6 +1,6 @@
 # Progress
 
-> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider technical evaluation is complete under separate hard-capped batches; user subjective behavior sign-off remains pending.
+> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider iteration remains incomplete: B26 and B28 each completed 18/19 turns; B27 PER-07 passed as a targeted case; B29 PER-08 retest stopped at `UPSTREAM_AUTH`. User subjective behavior sign-off remains pending.
 
 ## Project baseline
 
@@ -18,14 +18,14 @@
 - Persona clarification: 年糕 is 苏晚's British Shorthair cat, not the user's cat. The prompt must not imply that the user lives with, feeds, cares for, or is woken by 年糕 unless the user has explicitly described that interaction.
 - Initial local real-mode smoke: one isolated temporary-database chat completed with two provider calls (analysis and chat); full T12 evidence is recorded below.
 - Chat polish now has concise live-chat guidance, boundary checks for explicit guard questions, unsupported coworker events, and cat-ownership corrections. Obvious parenthetical action asides are cleaned from saved chat text; a simple greeting that over-asks is normalized to one conversational question.
-- Final T12 19-turn batch completed all turns, retrieved all 10 expected memory facts, injected the expected committed event, and had no source-reference leaks. See [acceptance.md](acceptance.md) for batch budgets, latency, tokens, and remaining behavior gaps.
+- Historical B12 met the original 19-turn threshold. Later B26/B28 full batches each completed 18/19 turns, retrieved 9/9 facts from completed turns, injected the expected event, and had no source-reference leaks; details and failures are recorded in [acceptance.md](acceptance.md).
 - The project folder has been moved to `E:\agents\wanwan`; ignored `.env`, `config.yaml`, `.venv`, and `data/` remain local and are not part of the PR.
 
 ## Near-term roadmap
 
-1. T12 technical evaluation is complete. Record actual model cost only if a rate card becomes available; do not treat unknown as zero.
+1. After provider authentication is restored, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
 2. Review remaining user-facing behavior in `tests/fixtures/behavior_cases.json`, especially direct answers from confirmed memory, explicit virtual-role disclosure, and the user's preferred conversational tone.
-3. Continue desktop and narrow-screen review. Following the Shinsekai README's dialogue-window/settings-center separation, keep the chat surface focused on conversation and management controls secondary; keep deferred P1 work out of scope until user feedback.
+3. Continue desktop and narrow-screen review. Apply Shinsekai's dialogue/settings separation and per-component chat theme ideas; no Shinsekai code or assets are reused. Keep deferred P1 work out of scope until user feedback.
 
 ## Source copies and SHA-256
 
@@ -183,4 +183,5 @@
 
 - Added targeted guards for virtual identity, fixed identity, confirmed-fact recall, 年糕 ownership, and pressure after the user has been away. Confirmed-fact checks use only facts that remained in the current PromptBundle.
 - Kept provider repair within the PRD limit of two chat attempts per turn and shortened repair messages to reduce context-overflow risk.
-- B13 used 42/60 provider attempts. The next bounded run must confirm whether the new repairs resolve the recorded failures; all behavior fixture manual results remain NOT_RUN.
+- B19–B29 used 343 provider attempts across independently capped batches. B26 and B28 each completed 18/19 turns; targeted B27 PER-07 passed; B29 PER-08 could not reach quality evaluation because of `UPSTREAM_AUTH`. All behavior fixture manual results remain NOT_RUN. See [acceptance.md](acceptance.md).
+
