@@ -1,6 +1,6 @@
 # Progress
 
-> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. One isolated real-provider smoke succeeded; full T12 behavior, quality, cost, and latency validation remains NOT_RUN.
+> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider technical evaluation is complete under separate hard-capped batches; user subjective behavior sign-off remains pending.
 
 ## Project baseline
 
@@ -16,14 +16,16 @@
 - Chat UI now prioritizes the conversation and session list, moves management pages below the history, adds a mobile sidebar drawer, and offers optional starter prompts that fill the composer without sending.
 - Runtime chat prompting has a separate conversational style guide with concise Chinese examples. Simple greetings should receive a natural greeting and at most one non-assumptive follow-up.
 - Persona clarification: 年糕 is 苏晚's British Shorthair cat, not the user's cat. The prompt must not imply that the user lives with, feeds, cares for, or is woken by 年糕 unless the user has explicitly described that interaction.
-- Local real-mode smoke: one isolated temporary-database chat completed successfully with two provider calls (analysis and chat). This is evidence of basic connectivity only, not full T12 acceptance.
+- Initial local real-mode smoke: one isolated temporary-database chat completed with two provider calls (analysis and chat); full T12 evidence is recorded below.
+- Chat polish now has concise live-chat guidance, boundary checks for explicit guard questions, unsupported coworker events, and cat-ownership corrections. Obvious parenthetical action asides are cleaned from saved chat text; a simple greeting that over-asks is normalized to one conversational question.
+- Final T12 19-turn batch completed all turns, retrieved all 10 expected memory facts, injected the expected committed event, and had no source-reference leaks. See [acceptance.md](acceptance.md) for batch budgets, latency, tokens, and remaining behavior gaps.
 - The project folder has been moved to `<project-root>`; ignored `.env`, `config.yaml`, `.venv`, and `data/` remain local and are not part of the PR.
 
 ## Near-term roadmap
 
-1. Complete PRD T12 using its isolated database and aggregate budget limits: structured-output reliability, a 19-turn conversation, semantic retrieval, latency, and cost evidence.
-2. Manually review all 13 behavior cases, especially greeting tone, confirmed-memory boundaries, and 年糕's ownership and interaction boundary.
-3. Review desktop and narrow-screen use after real use. Keep deferred P1 work out of scope until v1 acceptance and a separate scope decision.
+1. T12 technical evaluation is complete. Record actual model cost only if a rate card becomes available; do not treat unknown as zero.
+2. Review remaining user-facing behavior in `tests/fixtures/behavior_cases.json`, especially direct answers from confirmed memory, explicit virtual-role disclosure, and the user's preferred conversational tone.
+3. Continue desktop and narrow-screen review. Following the Shinsekai README's dialogue-window/settings-center separation, keep the chat surface focused on conversation and management controls secondary; keep deferred P1 work out of scope until user feedback.
 
 ## Source copies and SHA-256
 
@@ -170,7 +172,9 @@
 - Removed the temporary clean-install tree and synthetic acceptance data after verification. No real credentials were read or used.
 - Quality checks: `pip check` reported no broken requirements; `compileall`, `node --check ui/app.js`, and `git diff --check` passed. Git emitted only a README line-ending conversion warning during `git diff --check`.
 
-## Remaining authorization-gated work
+## Remaining work
 
-- T12 — PARTIAL. A single isolated basic smoke confirms the local real-mode analysis/chat path. JSON reliability probes, the 19-turn conversation, semantic retrieval review, latency, and cost validation remain NOT_RUN. Run them only within the PRD's isolated-data and aggregate-budget controls.
-- See [acceptance.md](acceptance.md) for the evidence matrix and known limits. Offline P0 functionality T00–T11 is complete; full real-provider behavior remains unverified.
+- T12 technical evaluation is complete. The PRD's structured-output and 19-turn thresholds have real-provider evidence; the cost remains unknown because there is no configured price card.
+- `manual_result` for the 12 behavior scenarios and 2 regression scenarios remains NOT_RUN until the user can review actual replies. Final live evaluation still found weak recall of an injected hobby, missing virtual-character disclosure, and one missed stage-direction cleanup.
+- See [acceptance.md](acceptance.md) for exact batch counts, thresholds, and known limits. Do not treat retrieval hits as proof that the model will always repeat the fact correctly.
+
