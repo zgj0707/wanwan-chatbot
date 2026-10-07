@@ -591,8 +591,8 @@
     return Date.now() - stamp < 7 * 86400000 ? 1 : 2;
   }
   function renderSessions(items) {
-    const query = els.sessionSearch.value.trim().casefold();
-    const filtered = query ? items.filter((item) => (item.title || "").casefold().includes(query)) : items;
+    const query = els.sessionSearch.value.trim().toLowerCase();
+    const filtered = query ? items.filter((item) => (item.title || "").toLowerCase().includes(query)) : items;
     const groups = [[], [], []];
     for (const session of filtered) groups[sessionGroupIndex(session)].push(session);
     els.sessions.replaceChildren();
