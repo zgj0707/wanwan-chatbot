@@ -23,6 +23,7 @@
     title: document.getElementById("session-title"),
     time: document.getElementById("time-context"),
     mode: document.getElementById("mode-badge"),
+    uiVersion: document.getElementById("ui-version"),
     archive: document.getElementById("archive-current"),
     openSettings: document.getElementById("open-settings"),
     closeSettings: document.getElementById("close-settings"),
@@ -1520,6 +1521,9 @@
     els.mode.classList.add("real-mode");
     els.mode.title = "当前为真实模型模式：每次回复都会调用已配置的模型，可能产生费用。";
   }
+  /* 侧栏底部的界面构建标记，用来确认浏览器加载的是不是最新一版 */
+  const buildTag = document.querySelector('meta[name="ui-build"]')?.content || "";
+  if (els.uiVersion) els.uiVersion.textContent = buildTag || "未知";
   try { applyRail(localStorage.getItem(railKey) === "1"); } catch { applyRail(false); }
   updateClock();
   setInterval(updateClock, 60_000);
