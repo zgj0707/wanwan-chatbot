@@ -88,7 +88,7 @@
 
 ## NOT_RUN 与已知边界
 
-- `tests/fixtures/behavior_cases.json` 包含 PRD §16.3 的 12 个场景和 1 个回归场景，新增项明确年糕是苏晚的猫，不得暗示用户与年糕互动；所有 `manual_result` 仍为 NOT_RUN，因为 FakeClient 不评人格质量。
+- `tests/fixtures/behavior_cases.json` 包含 PRD §16.3 的 12 个场景和 2 个回归场景，新增项明确年糕是苏晚的猫，不得暗示用户与年糕互动，并要求在被指出归属错误时简短承认和更正；所有 `manual_result` 仍为 NOT_RUN，因为 FakeClient 不评人格质量。
 - T12 的完整范围仍未运行：analysis/world JSON 多次探测、19 轮真实对话、P95、费用统计和真实中文语义检索。当前只确认了两次真实调用的基础冒烟，不能外推到完整行为或性能结论。
 - 事件生成只覆盖三个固定事项、固定时间槽与有限阶段；结构校验无法完全消除模型描述中的语义幻觉。完成事项不会自动开启新 cycle。
 - 主动开场仅在页面进入 session 时尝试一次，没有后台调度、通知或页面外消息。
