@@ -7,3 +7,8 @@ __pycache__/
 pytest-of-*/
 data/
 logs/
+
+# 本地工作产物（不进版本库）
+.workbuddy/
+work/
+outputs/
