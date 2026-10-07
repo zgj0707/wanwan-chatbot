@@ -182,4 +182,4 @@
 
 - Added targeted repair reasons for a direct virtual-identity question, an explicit identity rewrite request, and a direct question where a matching confirmed fact is injected but the reply still says it is forgotten. The existing reply limit remains two chat attempts per turn.
 - Broadened the parenthetical stage-direction cleanup vocabulary and strengthened the conversational prompt and voice rules.
-- `py_compile` passed for the four modified Python modules; nine focused synthetic policy assertions passed. No real-provider calls, full test suite, or manual human sign-off has been performed; all behavior fixture results stay NOT_RUN.
+- `py_compile` passed for the four modified Python modules; eleven focused synthetic policy assertions passed. No real-provider calls, full test suite, or manual human sign-off has been performed; all behavior fixture results stay NOT_RUN.
