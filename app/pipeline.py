@@ -325,6 +325,9 @@ def handle_turn(
                         text,
                         guard_active=guard_active,
                         world_events=context["events"],
+                        confirmed_facts=[
+                            fact for fact in memory_facts if fact.get("id") in bundle.fact_ids
+                        ],
                     ),
                 )
             except LLMFailure as exc:

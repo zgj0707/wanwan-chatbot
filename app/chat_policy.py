@@ -6,12 +6,50 @@ from typing import Any
 
 
 _STAGE_DIRECTION = re.compile(
-    r"[（(][^）)]{0,120}(?:手指|眉眼|眼神|轻摇|摇头|看向|指尖|轻舒|语气|笑容|轻笑|笑了笑|笑了一下|揉了揉|伸了个懒腰|抿嘴|眨眼|拨弄|耸肩|叹气|低头|抬头|动作|shrug|smil|look|glance)[^）)]*[）)]",
+    r"[（(][^）)]{0,120}(?:手指|眉眼|眼神|轻摇|摇头|看向|指尖|轻舒|语气|笑容|轻笑|笑了笑|笑了一下|揉了揉|伸了个懒腰|抿嘴|眨眼|拨弄|耸肩|叹气|低头|抬头|动作|神态|微笑|眯眼|点头|点点头|咧嘴|撅嘴|嘴角|眉梢|眉头|眼眸|瞳孔|耸耸肩|抬手|挥手|摆手|扶额|托腮|撑脸|靠着|伸手|歪头|侧头|低声|小声|轻声|打了个哈欠|端起|放下|捧起|喝了一口|蹭了蹭|摸了摸|拍了拍|眨了眨|瞥了一眼|瞟了一眼|移开目光|收回视线|叹了口气|长舒一口气|呼了口气|心里|心想|内心|敲了敲|转身|坐直|趴在|挠头|撩了撩|捋了捋|缩了缩|声音|神色|表情|肩膀|shrug|smil|look|glance)[^）)]*[）)]",
     re.IGNORECASE,
 )
 _SIMPLE_GREETING = re.compile(
     r"^(?:早上好|早安|早|你好|嗨|哈喽|晚上好)[呀啊哈哦～~!！。…，,. ]*$"
 )
+
+
+def _is_virtual_identity_question(user_text: str) -> bool:
+    user = user_text.casefold()
+    asks_directly = any(term in user for term in ("吗", "是不是", "？", "?", "真人"))
+    mentions_identity = any(term in user for term in ("虚拟", "人工智能", "ai", "真人", "现实中的人"))
+    return asks_directly and mentions_identity
+
+
+def _is_identity_rewrite_request(user_text: str) -> bool:
+    user = user_text
+    starts_as_rewrite = any(term in user for term in ("从现在起", "从现在开始", "从今天起", "以后你"))
+    assigns_identity = any(term in user for term in ("你是", "你变成", "你当"))
+    return starts_as_rewrite and assigns_identity
+
+
+def _requested_fact_key(user_text: str) -> str | None:
+    user = user_text
+    asks_for_a_fact = any(term in user for term in ("记得", "知道", "什么", "哪", "吗", "？", "?"))
+    if not asks_for_a_fact:
+        return None
+    if "生日" in user:
+        return "profile.birthday"
+    if any(term in user for term in ("怎么称呼我", "我叫什么", "我的名字", "称呼我")):
+        return "profile.preferred_name"
+    if any(term in user for term in ("爱好", "兴趣", "画什么", "画画", "绘画")):
+        return "preference.hobby"
+    if any(term in user for term in ("喝什么", "喜欢喝", "饮料", "奶茶", "咖啡", "茶")):
+        return "preference.drink"
+    if any(term in user for term in ("吃什么", "喜欢吃", "食物")):
+        return "preference.food"
+    if any(term in user for term in ("聊天风格", "说话方式", "回复方式")):
+        return "preference.chat_style"
+    return None
+
+
+def _normalized_memory_value(value: str) -> str:
+    return re.sub(r"""[\s，,。.!！?？、:：;；'"“”‘’（）()]""", "", value).casefold()
 
 
 def reply_boundary_violation(
@@ -20,6 +58,7 @@ def reply_boundary_violation(
     *,
     guard_active: bool,
     world_events: Sequence[Mapping[str, Any]],
+    confirmed_facts: Sequence[Mapping[str, Any]] = (),
 ) -> str | None:
     """Return a stable repair reason when a reply crosses a persona boundary."""
     text = reply.strip()
@@ -81,6 +120,41 @@ def reply_boundary_violation(
         )
         if not acknowledges_discomfort or pressures_user or denies_guard:
             return "active_guard_acknowledgement"
+
+    if _is_virtual_identity_question(user):
+        has_positive_disclosure = any(
+            term in text.casefold()
+            for term in ("虚拟角色", "虚拟人物", "虚拟人", "设定中的角色", "人工智能角色", "ai角色")
+        )
+        denies_virtual_identity = any(
+            term in text.casefold()
+            for term in ("不是虚拟", "并非虚拟", "不算虚拟", "不是ai", "不是人工智能", "并非人工智能")
+        )
+        if not has_positive_disclosure or denies_virtual_identity:
+            return "virtual_identity_disclosure"
+
+    if _is_identity_rewrite_request(user):
+        if "广州" not in text or "产品经理" not in text:
+            return "fixed_identity_reassertion"
+
+    requested_fact_key = _requested_fact_key(user)
+    if requested_fact_key is not None:
+        matching_fact = next(
+            (
+                fact for fact in confirmed_facts
+                if fact.get("key") == requested_fact_key and isinstance(fact.get("value"), str)
+            ),
+            None,
+        )
+        if matching_fact is not None:
+            value = _normalized_memory_value(str(matching_fact["value"]))
+            reply_value = _normalized_memory_value(text)
+            reply_value = _normalized_memory_value(text)
+            denies_memory = any(
+                term in text for term in ("不记得", "记不清", "没记下", "没有记录", "没记录", "想不起来", "不知道", "没印象")
+            )
+            if denies_memory and value and value not in reply_value:
+                return "confirmed_fact_recall"
 
     return None
 

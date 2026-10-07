@@ -175,6 +175,11 @@
 ## Remaining work
 
 - T12 technical evaluation is complete. The PRD's structured-output and 19-turn thresholds have real-provider evidence; the cost remains unknown because there is no configured price card.
-- `manual_result` for the 12 behavior scenarios and 2 regression scenarios remains NOT_RUN until the user can review actual replies. Final live evaluation still found weak recall of an injected hobby, missing virtual-character disclosure, and one missed stage-direction cleanup.
+- User review of the 14 behavior cases remains NOT_RUN until actual replies can be reviewed. A focused live follow-up is still needed for direct memory recall, virtual identity disclosure, fixed identity under override, and action-aside cleanup.
 - See [acceptance.md](acceptance.md) for exact batch counts, thresholds, and known limits. Do not treat retrieval hits as proof that the model will always repeat the fact correctly.
 
+## T12 conversation-quality follow-up
+
+- Added targeted repair reasons for a direct virtual-identity question, an explicit identity rewrite request, and a direct question where a matching confirmed fact is injected but the reply still says it is forgotten. The existing reply limit remains two chat attempts per turn.
+- Broadened the parenthetical stage-direction cleanup vocabulary and strengthened the conversational prompt and voice rules.
+- `py_compile` passed for the four modified Python modules; nine focused synthetic policy assertions passed. No real-provider calls, full test suite, or manual human sign-off has been performed; all behavior fixture results stay NOT_RUN.
