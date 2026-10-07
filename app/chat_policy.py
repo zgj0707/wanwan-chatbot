@@ -28,24 +28,25 @@ def _is_identity_rewrite_request(user_text: str) -> bool:
     return starts_as_rewrite and assigns_identity
 
 
-def _requested_fact_key(user_text: str) -> str | None:
+def _requested_fact_keys(user_text: str) -> tuple[str, ...]:
     user = user_text
     asks_for_a_fact = any(term in user for term in ("记得", "知道", "什么", "哪", "吗", "？", "?"))
     if not asks_for_a_fact:
-        return None
+        return ()
+    keys: list[str] = []
     if "生日" in user:
-        return "profile.birthday"
+        keys.append("profile.birthday")
     if any(term in user for term in ("怎么称呼我", "我叫什么", "我的名字", "称呼我")):
-        return "profile.preferred_name"
-    if any(term in user for term in ("爱好", "兴趣", "画什么", "画画", "绘画")):
-        return "preference.hobby"
+        keys.append("profile.preferred_name")
+    if any(term in user for term in ("爱好", "兴趣", "画什么", "画画", "绘画", "喜欢做什么")):
+        keys.append("preference.hobby")
     if any(term in user for term in ("喝什么", "喜欢喝", "饮料", "奶茶", "咖啡", "茶")):
-        return "preference.drink"
+        keys.append("preference.drink")
     if any(term in user for term in ("吃什么", "喜欢吃", "食物")):
-        return "preference.food"
+        keys.append("preference.food")
     if any(term in user for term in ("聊天风格", "说话方式", "回复方式")):
-        return "preference.chat_style"
-    return None
+        keys.append("preference.chat_style")
+    return tuple(keys)
 
 
 def _normalized_memory_value(value: str) -> str:
@@ -137,25 +138,19 @@ def reply_boundary_violation(
         if "广州" not in text or "产品经理" not in text:
             return "fixed_identity_reassertion"
 
-    requested_fact_key = _requested_fact_key(user)
-    if requested_fact_key is not None:
-        matching_fact = next(
-            (
-                fact for fact in confirmed_facts
-                if fact.get("key") == requested_fact_key and isinstance(fact.get("value"), str)
-            ),
-            None,
+    requested_fact_keys = set(_requested_fact_keys(user))
+    if requested_fact_keys:
+        reply_value = _normalized_memory_value(text)
+        denies_memory = any(
+            term in text for term in ("不记得", "记不清", "没记下", "没有记录", "没记录", "想不起来", "不知道", "没印象")
         )
-        if matching_fact is not None:
-            value = _normalized_memory_value(str(matching_fact["value"]))
-            reply_value = _normalized_memory_value(text)
-            reply_value = _normalized_memory_value(text)
-            denies_memory = any(
-                term in text for term in ("不记得", "记不清", "没记下", "没有记录", "没记录", "想不起来", "不知道", "没印象")
-            )
-            if denies_memory and value and value not in reply_value:
-                return "confirmed_fact_recall"
-
+        if denies_memory:
+            for fact in confirmed_facts:
+                if fact.get("key") not in requested_fact_keys or not isinstance(fact.get("value"), str):
+                    continue
+                value = _normalized_memory_value(str(fact["value"]))
+                if value and value not in reply_value:
+                    return "confirmed_fact_recall"
     return None
 
 

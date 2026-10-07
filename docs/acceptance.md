@@ -118,7 +118,7 @@
 
 - 为直接询问虚拟身份、直接改写身份，以及针对已注入的已确认事实却回答“不记得/没记录”的情况增加针对性修复提示；身份重写场景要求简短重申广州产品经理锚点。
 - 扩充动作旁白清理词表，减少括号演出感；普通聊天、用户未提供的互动和生活细节边界保持不变。
-- 对 `app/chat_policy.py`、`app/pipeline.py`、`app/llm.py`、`app/prompt.py` 执行 `py_compile`：PASS；使用合成事实检查了9项策略断言：PASS。未运行真实模型调用或 pytest；manual_result 仍为 NOT_RUN。修改后的真实回复需在下一次有界评估和用户实际使用中确认。
+- 对 `app/chat_policy.py`、`app/pipeline.py`、`app/llm.py`、`app/prompt.py` 执行 `py_compile`：PASS；使用合成事实检查了11项策略断言：PASS。未运行真实模型调用或 pytest；manual_result 仍为 NOT_RUN。修改后的真实回复需在下一次有界评估和用户实际使用中确认。
 
 
 ## 交付声明
