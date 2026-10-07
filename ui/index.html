@@ -9,41 +9,74 @@
 </head>
 <body>
   <!-- SUWAN_BOOTSTRAP -->
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="主导航与对话列表">
-      <div class="brand"><span class="brand-mark">晚</span><div><strong>苏晚晚</strong><small>本地对话</small></div></div>
-      <button id="new-session" class="new-session" type="button">＋ 新对话</button>
-      <div class="session-heading"><span>最近对话</span><label class="archive-toggle"><input id="show-archived" type="checkbox"> 已归档</label></div>
+  <div id="app-shell" class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="主导航与对话列表">
+      <div class="sidebar-head">
+        <div class="brand"><span class="brand-mark">晚</span><span class="brand-text"><strong>苏晚晚</strong><small>本地对话</small></span></div>
+        <button id="sidebar-collapse" class="icon-button collapse-button" type="button" aria-label="收起侧栏" title="收起侧栏">«</button>
+      </div>
+      <div class="sidebar-search"><input id="session-search" type="search" placeholder="搜索对话" aria-label="搜索对话"></div>
+      <button id="new-session" class="new-session" type="button"><span class="plus">＋</span><span class="label">新对话</span></button>
+      <div class="session-heading"><span class="label">最近对话</span><label class="archive-toggle"><input id="show-archived" type="checkbox"> 已归档</label></div>
       <nav id="sessions" class="sessions" aria-label="对话"></nav>
-      <details class="sidebar-tools">
-        <summary>资料与设置</summary>
-        <nav class="page-nav" aria-label="管理页面">
-          <button class="page-link active" type="button" data-view="chat-view">返回对话</button>
-          <button class="page-link" type="button" data-view="memory-view">记忆管理</button>
-          <button class="page-link" type="button" data-view="persona-view">晚晚档案</button>
-          <button class="page-link" type="button" data-view="diagnostics-view">设置与诊断</button>
-        </nav>
-        <p class="local-note">仅本机使用 · 配置更改后需重启</p>
-      </details>
+      <div class="sidebar-foot">
+        <button class="foot-link settings-entry" type="button" data-view="memory-view"><span class="foot-icon">▦</span><span class="foot-label">记忆管理</span></button>
+        <button class="foot-link settings-entry" type="button" data-view="persona-view"><span class="foot-icon">✿</span><span class="foot-label">晚晚档案</span></button>
+        <button class="foot-link settings-entry" type="button" data-view="diagnostics-view"><span class="foot-icon">⚙</span><span class="foot-label">设置与诊断</span></button>
+        <p class="local-note label">仅本机使用 · 配置更改后需重启</p>
+      </div>
     </aside>
     <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭对话列表"></button>
+
     <main class="chat-panel">
-      <section id="chat-view" class="view chat-view" aria-label="对话">
-        <header class="topbar">
-          <div class="topbar-heading"><button id="sidebar-toggle" class="mobile-menu-button" type="button" aria-label="打开对话列表" title="打开对话列表">☰</button><div><h1 id="session-title">新对话</h1><p id="time-context">广州时间</p></div></div>
-          <div class="topbar-badges"><button id="archive-current" class="icon-button" type="button" aria-label="归档对话" title="归档对话">归档</button></div>
-        </header>
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="sidebar-toggle" class="icon-button mobile-menu-button" type="button" aria-label="打开对话列表" title="打开对话列表">☰</button>
+          <div class="topbar-heading"><h1 id="session-title">新对话</h1><p id="time-context">广州时间</p></div>
+        </div>
+        <div class="topbar-badges">
+          <span id="mode-badge" class="mode-badge">离线模拟</span>
+          <button id="archive-current" class="ghost-button" type="button" aria-label="归档对话" title="归档对话">归档</button>
+          <button id="open-settings" class="ghost-button" type="button" aria-label="打开设置中心" title="设置中心">设置中心</button>
+        </div>
+      </header>
+
+      <div id="chat-scroll" class="chat-scroll">
         <div id="initiative-notice" class="initiative-notice hidden" role="status" aria-live="polite"></div>
         <section id="messages" class="messages" aria-live="polite" aria-label="消息记录"></section>
-        <section id="pending-area" class="pending-area" aria-live="polite"></section>
-        <form id="composer" class="composer">
-          <label class="sr-only" for="message-input">发送给苏晚</label>
-          <textarea id="message-input" rows="1" maxlength="2000" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
-          <div class="composer-footer"><span>Enter 发送 · Shift+Enter 换行</span><div><button id="cancel-wait" class="text-button hidden" type="button">取消等待</button><button id="query-operation" class="text-button hidden" type="button">查看发送状态</button><button id="send-button" class="send-button" type="submit">发送</button></div></div>
-        </form>
-      </section>
+        <button id="scroll-bottom" class="scroll-bottom hidden" type="button" aria-label="回到底部" title="回到底部">↓</button>
+      </div>
 
-      <section id="memory-view" class="view management-view hidden" aria-label="记忆管理">
+      <section id="pending-area" class="pending-area" aria-live="polite"></section>
+
+      <form id="composer" class="composer">
+        <textarea id="message-input" rows="1" maxlength="2000" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <div class="composer-footer">
+          <div class="composer-left">
+            <span id="char-count" class="char-count hidden">0 / 2000</span>
+            <span class="hint">Enter 发送 · Shift+Enter 换行</span>
+          </div>
+          <div class="composer-actions">
+            <button id="query-operation" class="text-button hidden" type="button">查看发送状态</button>
+            <button id="cancel-wait" class="text-button hidden" type="button">取消等待</button>
+            <button id="send-button" class="send-button" type="submit">发送</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <div id="settings-overlay" class="settings-overlay hidden" role="dialog" aria-modal="true" aria-label="设置中心">
+    <header class="settings-topbar">
+      <div class="settings-tabs" role="tablist" aria-label="设置中心页面">
+        <button class="settings-tab active" type="button" data-view="memory-view" role="tab">记忆管理</button>
+        <button class="settings-tab" type="button" data-view="persona-view" role="tab">晚晚档案</button>
+        <button class="settings-tab" type="button" data-view="diagnostics-view" role="tab">设置与诊断</button>
+      </div>
+      <button id="close-settings" class="ghost-button" type="button">返回对话 ✕</button>
+    </header>
+    <div class="settings-body">
+      <section id="memory-view" class="view management-view" aria-label="记忆管理">
         <header class="management-header"><h1>记忆管理</h1><p>自动识别的事实先等待确认。修改会创建新版本；忘记会移除相关来源内容。</p></header>
         <div id="manager-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <form id="manual-memory-form" class="panel-card manual-memory-form">
@@ -104,7 +137,7 @@
       </section>
 
       <section id="diagnostics-view" class="view management-view hidden" aria-label="设置与诊断">
-        <header class="management-header"><div class="management-title-row"><h1>设置与诊断</h1><span id="mode-badge" class="mode-badge">离线模拟</span></div><p>状态检查不会调用模型。测试模型会发送一次短请求并可能产生费用。</p></header>
+        <header class="management-header"><h1>设置与诊断</h1><p>状态检查不会调用模型。测试模型会发送一次短请求并可能产生费用。</p></header>
         <div id="diagnostics-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <div id="diagnostics-summary" class="diagnostics-grid"></div>
         <section class="panel-card">
@@ -128,7 +161,7 @@
           <p>恢复前先关闭应用，在项目目录的 PowerShell 中运行：<br><code>python scripts\restore_backup.py --archive "C:\路径\备份.zip" --data-dir "C:\路径\wanwan-chatbot\data"</code><br>路径必须使用绝对路径。输入 <code>RESTORE</code> 后才会继续；运行中的应用会锁定恢复操作。恢复后再次启动，页面会生成新的本机会话令牌。</p>
         </section>
       </section>
-    </main>
+    </div>
   </div>
 
   <dialog id="forget-dialog" class="forget-dialog">

@@ -5,24 +5,35 @@
   const token = bootstrap.token || "";
   const api = "/api/v1";
   const els = {
+    shell: document.getElementById("app-shell"),
+    sidebarToggle: document.getElementById("sidebar-toggle"),
+    sidebarCollapse: document.getElementById("sidebar-collapse"),
+    sidebarBackdrop: document.getElementById("sidebar-backdrop"),
+    sessionSearch: document.getElementById("session-search"),
     sessions: document.getElementById("sessions"),
-    messages: document.getElementById("messages"),
+    showArchived: document.getElementById("show-archived"),
+    newSession: document.getElementById("new-session"),
     title: document.getElementById("session-title"),
     time: document.getElementById("time-context"),
     mode: document.getElementById("mode-badge"),
+    archive: document.getElementById("archive-current"),
+    openSettings: document.getElementById("open-settings"),
+    closeSettings: document.getElementById("close-settings"),
+    settingsTabs: [...document.querySelectorAll(".settings-tab[data-view]")],
+    settingsEntries: [...document.querySelectorAll(".settings-entry[data-view]")],
+    settingsOverlay: document.getElementById("settings-overlay"),
+    views: [...document.querySelectorAll("#settings-overlay .view")],
+    chatScroll: document.getElementById("chat-scroll"),
+    messages: document.getElementById("messages"),
+    scrollBottom: document.getElementById("scroll-bottom"),
+    pending: document.getElementById("pending-area"),
     form: document.getElementById("composer"),
     input: document.getElementById("message-input"),
     send: document.getElementById("send-button"),
-    newSession: document.getElementById("new-session"),
-    sidebarToggle: document.getElementById("sidebar-toggle"),
-    sidebarBackdrop: document.getElementById("sidebar-backdrop"),
-    showArchived: document.getElementById("show-archived"),
-    archive: document.getElementById("archive-current"),
-    pending: document.getElementById("pending-area"),
+    charCount: document.getElementById("char-count"),
     cancelWait: document.getElementById("cancel-wait"),
     queryOperation: document.getElementById("query-operation"),
-    pageLinks: [...document.querySelectorAll(".page-link[data-view]")],
-    views: [...document.querySelectorAll(".view")],
+    initiativeNotice: document.getElementById("initiative-notice"),
     managerNotice: document.getElementById("manager-notice"),
     personaNotice: document.getElementById("persona-notice"),
     diagnosticsNotice: document.getElementById("diagnostics-notice"),
@@ -35,7 +46,6 @@
     memoryWorldEventCount: document.getElementById("memory-world-event-count"),
     refreshWorld: document.getElementById("refresh-world"),
     advanceWorld: document.getElementById("advance-world"),
-    initiativeNotice: document.getElementById("initiative-notice"),
     manualMemoryForm: document.getElementById("manual-memory-form"),
     memoryKey: document.getElementById("memory-key"),
     memoryValue: document.getElementById("memory-value"),
@@ -62,6 +72,8 @@
     cancelForget: document.getElementById("cancel-forget"),
   };
   const storageKey = "suwan.pending-operation.v1";
+  const railKey = "suwan.sidebar.rail.v1";
+  let sessionsCache = [];
   let activeSessionId = null;
   let activeSession = null;
   let pending = loadPending();
@@ -74,6 +86,8 @@
   let initiativeGeneration = 0;
   const initiativePendingSessions = new Set();
   let worldBusy = false;
+  let nextBeforeId = null;
+  let loadEarlierBusy = false;
 
   function loadPending() {
     try { return JSON.parse(sessionStorage.getItem(storageKey) || "null"); }
@@ -99,12 +113,11 @@
     }
     return { data, status: response.status };
   }
-  function setWaiting(value) {
-    isWaiting = value;
-    const blocked = value || Boolean(pending) || initiativePendingSessions.has(activeSessionId);
-    els.send.disabled = blocked;
-    els.input.disabled = blocked;
-    els.cancelWait.classList.toggle("hidden", !value && !polling);
+  function make(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
   }
   function updateClock() {
     const dateText = new Intl.DateTimeFormat("zh-CN", {
@@ -118,20 +131,28 @@
     if (Number.isNaN(date.getTime())) return "";
     return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
   }
-  function make(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined && text !== null) node.textContent = String(text);
-    return node;
-  }
+
+  /* ── 侧边栏：抽屉与折叠窄条 ─────────────── */
   function closeSidebar() {
-    document.querySelector(".app-shell")?.classList.remove("sidebar-open");
+    els.shell.classList.remove("sidebar-open");
     els.sidebarToggle?.setAttribute("aria-expanded", "false");
   }
   function openSidebar() {
-    document.querySelector(".app-shell")?.classList.add("sidebar-open");
+    els.shell.classList.add("sidebar-open");
     els.sidebarToggle?.setAttribute("aria-expanded", "true");
   }
+  function applyRail(enabled) {
+    els.shell.classList.toggle("rail", enabled);
+    els.sidebarCollapse.textContent = enabled ? "»" : "«";
+    els.sidebarCollapse.title = enabled ? "展开侧栏" : "收起侧栏";
+  }
+  function toggleRail() {
+    const enabled = !els.shell.classList.contains("rail");
+    applyRail(enabled);
+    try { localStorage.setItem(railKey, enabled ? "1" : "0"); } catch { /* 本地存储不可用时忽略 */ }
+  }
+
+  /* ── 提示信息 ─────────────────────────────── */
   function setViewNotice(viewId, message, isError = false) {
     const targets = {
       "memory-view": els.managerNotice,
@@ -144,15 +165,35 @@
     target.classList.toggle("hidden", !message);
     target.classList.toggle("error", Boolean(message && isError));
   }
-  function switchView(viewId) {
+  function showNotice(message) {
+    if (currentView !== "chat-view") {
+      setViewNotice(currentView, message, false);
+      return;
+    }
+    const notice = make("div", "pending-card", message);
+    els.pending.prepend(notice);
+    setTimeout(() => notice.remove(), 6000);
+  }
+
+  /* ── 设置中心（全屏层，tab 切换）──────────── */
+  function switchSettingsTab(viewId) {
     currentView = viewId;
-    closeSidebar();
+    for (const tab of els.settingsTabs) tab.classList.toggle("active", tab.dataset.view === viewId);
     for (const view of els.views) view.classList.toggle("hidden", view.id !== viewId);
-    for (const link of els.pageLinks) link.classList.toggle("active", link.dataset.view === viewId);
     if (viewId === "memory-view") void loadMemoryView();
     if (viewId === "persona-view") void loadPersonaView();
     if (viewId === "diagnostics-view") void loadDiagnosticsView();
   }
+  function openSettings(viewId) {
+    els.settingsOverlay.classList.remove("hidden");
+    switchSettingsTab(viewId);
+  }
+  function closeSettings() {
+    els.settingsOverlay.classList.add("hidden");
+    currentView = "chat-view";
+  }
+
+  /* ── 记忆管理 ─────────────────────────────── */
   const memoryLabels = {
     "profile.preferred_name": "称呼",
     "profile.birthday": "生日",
@@ -166,7 +207,7 @@
     els.memoryList.replaceChildren();
     els.memoryCount.textContent = String(items.length);
     if (!items.length) {
-      els.memoryList.append(make("p", "empty-state manager-empty", "还没有用户记忆。可以手动添加，或在待确认事实中确认一条。"));
+      els.memoryList.append(make("p", "manager-empty", "还没有用户记忆。可以手动添加，或在待确认事实中确认一条。"));
       return;
     }
     for (const item of items) {
@@ -221,7 +262,7 @@
     container.replaceChildren();
     countNode.textContent = String(proposals.length);
     if (!proposals.length) {
-      container.append(make("p", "empty-state manager-empty", "目前没有待确认建议。"));
+      container.append(make("p", "manager-empty", "目前没有待确认建议。"));
       return;
     }
     for (const proposal of proposals) {
@@ -278,6 +319,8 @@
       setViewNotice("memory-view", error.message || "无法加载记忆数据。", true);
     }
   }
+
+  /* ── 晚晚档案 ─────────────────────────────── */
   async function loadPersonaView() {
     setViewNotice("persona-view", "正在读取档案…");
     try {
@@ -304,6 +347,8 @@
       setViewNotice("persona-view", "");
     } catch (error) { setViewNotice("persona-view", error.message || "无法加载晚晚档案。", true); }
   }
+
+  /* ── 设置与诊断 ───────────────────────────── */
   async function loadDiagnosticsView() {
     setViewNotice("diagnostics-view", "正在检查本地状态…");
     try {
@@ -334,7 +379,7 @@
       const calls = summary.recent_calls || [];
       els.diagnosticsCalls.replaceChildren();
       if (!calls.length) {
-        els.diagnosticsCalls.append(make("p", "empty-state manager-empty", "还没有模型调用记录。"));
+        els.diagnosticsCalls.append(make("p", "manager-empty", "还没有模型调用记录。"));
       } else {
         const table = make("table", "diagnostics-table");
         const head = make("tr", "");
@@ -352,6 +397,8 @@
       setViewNotice("diagnostics-view", data.configuration || "");
     } catch (error) { setViewNotice("diagnostics-view", error.message || "无法读取诊断信息。", true); }
   }
+
+  /* ── 生活事项与生活事件 ───────────────────── */
   const worldStageLabels = { planned: "计划中", started: "已开始", progressed: "进行中", done: "已完成", paused: "已暂停" };
   function setWorldNotice(message, isError = false) {
     els.worldNotice.textContent = message || "";
@@ -385,7 +432,7 @@
       setWorldNotice("");
     } catch (error) {
       setWorldNotice(error.message || "无法加载生活事项。", true);
-      els.worldThreads.replaceChildren(make("p", "empty-state manager-empty", "生活事项暂时不可用。"));
+      els.worldThreads.replaceChildren(make("p", "manager-empty", "生活事项暂时不可用。"));
       renderWorldEvents(els.worldEvents, els.worldEventCount, [], new Map(), true);
       renderWorldEvents(els.memoryWorldEvents, els.memoryWorldEventCount, [], new Map(), false);
     }
@@ -394,7 +441,7 @@
     container.replaceChildren();
     countNode.textContent = String(events.length);
     if (!events.length) {
-      container.append(make("p", "empty-state manager-empty", "还没有已发生的生活事件。"));
+      container.append(make("p", "manager-empty", "还没有已发生的生活事件。"));
       return;
     }
     for (const event of events) {
@@ -458,6 +505,8 @@
           : "检查已完成；没有符合条件的新生活进展。",
     );
   }
+
+  /* ── 主动开场 ─────────────────────────────── */
   function clearInitiativeNotice() {
     els.initiativeNotice.replaceChildren();
     els.initiativeNotice.classList.add("hidden");
@@ -505,6 +554,8 @@
       if (activeSessionId === sessionId) renderPending();
     }
   }
+
+  /* ── 忘记记忆 ─────────────────────────────── */
   function openForgetDialog(factId) {
     forgetFactId = factId;
     els.redactSessionHistory.checked = true;
@@ -525,45 +576,95 @@
       setViewNotice("memory-view", notice);
     } catch (error) { setViewNotice("memory-view", error.message || "无法忘记这条记忆。", true); }
   }
+
+  /* ── 会话列表：搜索 + 时间分组 ────────────── */
+  function sessionDayKey(value) {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  }
+  function sessionGroupIndex(session) {
+    const stamp = Date.parse(session.updated_at || session.created_at || "");
+    if (Number.isNaN(stamp)) return 2;
+    const todayKey = sessionDayKey(new Date());
+    if (sessionDayKey(new Date(stamp)) === todayKey) return 0;
+    return Date.now() - stamp < 7 * 86400000 ? 1 : 2;
+  }
   function renderSessions(items) {
+    const query = els.sessionSearch.value.trim().casefold();
+    const filtered = query ? items.filter((item) => (item.title || "").casefold().includes(query)) : items;
+    const groups = [[], [], []];
+    for (const session of filtered) groups[sessionGroupIndex(session)].push(session);
     els.sessions.replaceChildren();
-    for (const session of items) {
-      const row = make("div", "session-item");
-      const open = make("button", `session-open${session.id === activeSessionId ? " active" : ""}${session.archived ? " archived" : ""}`, session.title);
-      open.type = "button";
-      open.addEventListener("click", () => {
-        if (pending && session.id !== pending.session_id) {
-          showNotice("这次消息仍在处理，先查询或完成它再切换对话。");
-          return;
-        }
-        void selectSession(session);
-      });
-      row.append(open);
-      if (session.archived) {
-        const restore = make("button", "restore-button", "恢复");
-        restore.type = "button";
-        restore.addEventListener("click", async () => {
-          await request(`/sessions/${session.id}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: false }) });
-          await loadSessions();
-        });
-        row.append(restore);
-      }
-      els.sessions.append(row);
+    if (!filtered.length) {
+      els.sessions.append(make("p", "session-empty", query ? "没有匹配的对话。" : "还没有对话。"));
+      return;
     }
+    const groupLabels = ["今天", "7 天内", "更早"];
+    groups.forEach((group, index) => {
+      if (!group.length) return;
+      if (!query) els.sessions.append(make("p", "session-group-label", groupLabels[index]));
+      for (const session of group) {
+        const row = make("div", "session-item");
+        const open = make("button", `session-open${session.id === activeSessionId ? " active" : ""}${session.archived ? " archived" : ""}`, `${session.title}${session.archived ? " · 已归档" : ""}`);
+        open.type = "button";
+        open.title = session.title || "";
+        open.addEventListener("click", () => {
+          if (pending && session.id !== pending.session_id) {
+            showNotice("这次消息仍在处理，先查询或完成它再切换对话。");
+            return;
+          }
+          void selectSession(session);
+        });
+        row.append(open);
+        if (session.archived) {
+          const restore = make("button", "session-flag", "恢复");
+          restore.type = "button";
+          restore.title = "恢复对话";
+          restore.addEventListener("click", async () => {
+            await request(`/sessions/${session.id}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: false }) });
+            await loadSessions();
+          });
+          row.append(restore);
+        } else {
+          const archiveRow = make("button", "session-flag", "归档");
+          archiveRow.type = "button";
+          archiveRow.title = "归档对话";
+          archiveRow.addEventListener("click", async () => {
+            if (pending && session.id === pending.session_id) {
+              showNotice("这条消息仍在处理，完成后再归档。");
+              return;
+            }
+            await request(`/sessions/${session.id}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: true }) });
+            if (session.id === activeSessionId) { activeSessionId = null; activeSession = null; }
+            await loadSessions();
+          });
+          row.append(archiveRow);
+        }
+        els.sessions.append(row);
+      }
+    });
   }
   async function loadSessions() {
     const include = els.showArchived.checked || Boolean(pending);
     const { data } = await request(`/sessions?include_archived=${include}`);
-    renderSessions(data.items || []);
+    sessionsCache = data.items || [];
+    renderSessions(sessionsCache);
     let current = pending
-      ? (data.items || []).find((item) => item.id === pending.session_id)
-      : (data.items || []).find((item) => item.id === activeSessionId);
-    if (!current && !include) current = (data.items || [])[0];
-    if (!current && (data.items || []).length === 0) {
+      ? sessionsCache.find((item) => item.id === pending.session_id)
+      : sessionsCache.find((item) => item.id === activeSessionId);
+    if (!current && !include) current = sessionsCache[0];
+    if (!current && sessionsCache.length === 0) {
       if (!activeSessionId) await createSession();
       return;
     }
     if (current && current.id !== activeSessionId) await selectSession(current);
+  }
+  async function loadSessionsListOnly() {
+    const include = els.showArchived.checked;
+    const { data } = await request(`/sessions?include_archived=${include}`);
+    sessionsCache = data.items || [];
+    renderSessions(sessionsCache);
   }
   async function createSession() {
     const { data } = await request("/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "新对话" }) });
@@ -578,7 +679,8 @@
     clearInitiativeNotice();
     activeSessionId = session.id;
     activeSession = session;
-    if (currentView !== "chat-view") switchView("chat-view");
+    nextBeforeId = null;
+    if (els.settingsOverlay && !els.settingsOverlay.classList.contains("hidden")) closeSettings();
     els.title.textContent = session.title;
     els.archive.disabled = Boolean(session.archived);
     els.archive.title = session.archived ? "已归档" : "归档对话";
@@ -595,15 +697,16 @@
       if (!pending && !session.archived) void requestInitiative(session.id, generation);
     }
   }
-  async function loadSessionsListOnly() {
-    const include = els.showArchived.checked;
-    const { data } = await request(`/sessions?include_archived=${include}`);
-    renderSessions(data.items || []);
+
+  /* ── 消息流 ───────────────────────────────── */
+  function scrollToBottom() {
+    els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
   }
   async function loadMessages() {
     if (!activeSessionId) return;
     const { data } = await request(`/sessions/${activeSessionId}/messages?limit=50`);
     els.messages.replaceChildren();
+    nextBeforeId = data.next_before_id || null;
     const items = data.items || [];
     if (!items.length && !(pending && pending.session_id === activeSessionId)) {
       const welcome = make("div", "empty-state");
@@ -626,30 +729,79 @@
       els.messages.append(welcome);
       return;
     }
+    if (nextBeforeId) appendLoadEarlier();
     for (const item of items) appendMessage(item);
-    els.messages.scrollTop = els.messages.scrollHeight;
+    scrollToBottom();
   }
-  function appendMessage(message) {
+  function appendLoadEarlier() {
+    const button = make("button", "load-earlier", "加载更早的消息");
+    button.type = "button";
+    button.addEventListener("click", () => { void loadEarlier(button); });
+    els.messages.prepend(button);
+  }
+  async function loadEarlier(button) {
+    if (!nextBeforeId || loadEarlierBusy || !activeSessionId) return;
+    loadEarlierBusy = true;
+    button.disabled = true;
+    button.textContent = "正在加载…";
+    try {
+      const { data } = await request(`/sessions/${activeSessionId}/messages?limit=50&before_id=${encodeURIComponent(nextBeforeId)}`);
+      const items = data.items || [];
+      const previousHeight = els.chatScroll.scrollHeight;
+      for (const item of items.slice().reverse()) appendMessage(item, true);
+      nextBeforeId = data.next_before_id || null;
+      if (nextBeforeId) {
+        appendLoadEarlier();
+        els.chatScroll.scrollTop += els.chatScroll.scrollHeight - previousHeight;
+      } else {
+        button.remove();
+        els.chatScroll.scrollTop += els.chatScroll.scrollHeight - previousHeight;
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "加载更早的消息";
+      showNotice(error.message || "无法加载更早的消息。");
+    } finally {
+      loadEarlierBusy = false;
+    }
+  }
+  function appendMessage(message, prepend = false) {
     const user = message.role === "user";
     const row = make("div", `message-row ${user ? "user" : "assistant"}`);
     if (!user) row.append(make("span", "avatar", "晚"));
     const body = make("div", "message-body");
-    if (!user) body.append(make("span", "message-author", "晚晚"));
+    const authorRow = make("div", "message-author-row");
+    if (!user) authorRow.append(make("span", "message-author", "苏晚晚"));
+    authorRow.append(make("time", "message-time", localTime(message.created_at)));
+    body.append(authorRow);
     const bubble = make("div", `bubble${message.redacted ? " redacted" : ""}`, message.redacted ? "此条内容已因忘记操作移除" : (message.content || ""));
     body.append(bubble);
-    body.append(make("time", "message-time", localTime(message.created_at)));
+    if (!message.redacted && message.content) {
+      const actions = make("div", "message-actions");
+      const copyButton = make("button", "copy-button", "复制");
+      copyButton.type = "button";
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(message.content || "");
+          copyButton.textContent = "已复制";
+          setTimeout(() => { copyButton.textContent = "复制"; }, 1200);
+        } catch { copyButton.textContent = "复制失败"; }
+      });
+      actions.append(copyButton);
+      body.append(actions);
+    }
     row.append(body);
     if (user) row.append(make("span", "avatar user-avatar", "我"));
-    els.messages.append(row);
-    els.messages.scrollTop = els.messages.scrollHeight;
+    if (prepend && els.messages.firstElementChild) els.messages.insertBefore(row, els.messages.firstElementChild);
+    else els.messages.append(row);
+    if (!prepend) scrollToBottom();
   }
   function renderPending(message = "") {
+    void message;
     els.pending.replaceChildren();
     const belongs = pending && pending.session_id === activeSessionId;
     if (!belongs) {
-      const blocked = isWaiting || Boolean(pending) || initiativePendingSessions.has(activeSessionId);
-      els.send.disabled = blocked;
-      els.input.disabled = blocked;
+      renderComposerState();
       els.queryOperation.classList.add("hidden");
       return;
     }
@@ -660,7 +812,7 @@
     outgoing.append(outgoingBody);
     els.pending.append(outgoing);
     if (pending.error) {
-      const card = make("div", "pending-card");
+      const card = make("div", "pending-card error-card");
       card.append(make("div", "", "这条消息暂时没能确认送达。"));
       if (pending.error.message) card.append(make("div", "pending-detail", pending.error.message));
       const actions = make("div", "pending-actions");
@@ -676,7 +828,9 @@
       const waiting = make("div", "message-row assistant waiting-message");
       waiting.append(make("span", "avatar", "晚"));
       const waitingBody = make("div", "message-body");
-      waitingBody.append(make("span", "message-author", "晚晚"));
+      const waitingAuthor = make("div", "message-author-row");
+      waitingAuthor.append(make("span", "message-author", "苏晚晚"));
+      waitingBody.append(waitingAuthor);
       const bubble = make("div", "bubble");
       bubble.append(make("span", "typing-label", "正在想怎么回你"));
       appendTypingDots(bubble);
@@ -684,9 +838,8 @@
       waiting.append(waitingBody);
       els.pending.append(waiting);
     }
-    els.send.disabled = true;
-    els.input.disabled = true;
     els.queryOperation.classList.toggle("hidden", !pending.error);
+    renderComposerState();
   }
   function setPendingError(error) {
     pending.error = { code: error?.code || "NETWORK_ERROR", message: error?.message || "暂时无法确认处理结果", retryable: Boolean(error?.retryable) };
@@ -694,6 +847,8 @@
     savePending();
     renderPending();
   }
+
+  /* ── 发送与轮询 ───────────────────────────── */
   async function sendPending(retry) {
     if (!pending || isWaiting) return;
     if (pending.session_id !== activeSessionId) await activatePendingSession();
@@ -786,28 +941,48 @@
   function beginPolling() {
     if (polling) return;
     polling = true;
-    els.cancelWait.classList.remove("hidden");
+    renderComposerState();
     const poll = async () => {
-      if (!pending || !polling) { polling = false; els.cancelWait.classList.toggle("hidden", !isWaiting); return; }
+      if (!pending || !polling) { polling = false; renderComposerState(); return; }
       const result = await checkOperation(false);
       if (result?.status === "pending" && polling) setTimeout(poll, 1200);
-      else { polling = false; els.cancelWait.classList.toggle("hidden", !isWaiting); }
+      else { polling = false; renderComposerState(); }
     };
     setTimeout(poll, 900);
+  }
+  function cancelWait() {
+    polling = false;
+    waitController?.abort();
+    setWaiting(false);
+    if (pending) { pending.status = "pending"; savePending(); renderPending(); }
+    else renderComposerState();
   }
   async function activatePendingSession() {
     const { data } = await request(`/sessions?include_archived=true`);
     const session = data.items.find((item) => item.id === pending.session_id);
     if (session) await selectSession(session);
   }
-  function showNotice(message) {
-    if (currentView !== "chat-view") {
-      setViewNotice(currentView, message, false);
-      return;
-    }
-    const notice = make("div", "pending-card", message);
-    els.pending.prepend(notice);
-    setTimeout(() => notice.remove(), 6000);
+
+  /* ── 输入区状态 ───────────────────────────── */
+  function setWaiting(value) {
+    isWaiting = value;
+    renderComposerState();
+  }
+  function renderComposerState() {
+    const stopping = isWaiting || polling;
+    const blocked = isWaiting || Boolean(pending) || initiativePendingSessions.has(activeSessionId);
+    els.input.disabled = blocked;
+    els.send.classList.toggle("stopping", stopping);
+    els.send.textContent = stopping ? "停止" : "发送";
+    els.send.disabled = blocked && !stopping;
+    els.cancelWait.classList.toggle("hidden", !stopping);
+    updateCharCount();
+  }
+  function updateCharCount() {
+    const length = els.input.value.length;
+    els.charCount.textContent = `${length} / 2000`;
+    els.charCount.classList.toggle("hidden", length === 0);
+    els.charCount.classList.toggle("warn", length >= 1800);
   }
   async function submit() {
     if (pending || isWaiting || !activeSessionId) return;
@@ -823,9 +998,14 @@
   function resizeInput() {
     els.input.style.height = "auto";
     els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
+    updateCharCount();
   }
 
+  /* ── 事件绑定 ─────────────────────────────── */
   els.form.addEventListener("submit", (event) => { event.preventDefault(); void submit(); });
+  els.send.addEventListener("click", (event) => {
+    if (isWaiting || polling) { event.preventDefault(); cancelWait(); }
+  });
   els.input.addEventListener("compositionstart", () => { isComposing = true; });
   els.input.addEventListener("compositionend", () => { isComposing = false; });
   els.input.addEventListener("input", resizeInput);
@@ -837,10 +1017,16 @@
   });
   els.newSession.addEventListener("click", () => { if (!pending) void createSession(); });
   els.sidebarToggle.addEventListener("click", () => {
-    document.querySelector(".app-shell")?.classList.contains("sidebar-open") ? closeSidebar() : openSidebar();
+    els.shell.classList.contains("sidebar-open") ? closeSidebar() : openSidebar();
   });
+  els.sidebarCollapse.addEventListener("click", toggleRail);
   els.sidebarBackdrop.addEventListener("click", closeSidebar);
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSidebar(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!els.settingsOverlay.classList.contains("hidden")) { closeSettings(); return; }
+    closeSidebar();
+  });
+  els.sessionSearch.addEventListener("input", () => { renderSessions(sessionsCache); });
   els.showArchived.addEventListener("change", () => { void loadSessions(); });
   els.archive.addEventListener("click", async () => {
     if (!activeSessionId || activeSession?.archived || pending) return;
@@ -849,14 +1035,21 @@
     activeSession = null;
     await loadSessions();
   });
-  els.cancelWait.addEventListener("click", () => {
-    polling = false;
-    waitController?.abort();
-    setWaiting(false);
-    if (pending) { pending.status = "pending"; savePending(); renderPending(); }
-  });
+  els.cancelWait.addEventListener("click", cancelWait);
   els.queryOperation.addEventListener("click", () => { void checkOperation(true); });
-  for (const link of els.pageLinks) link.addEventListener("click", () => switchView(link.dataset.view));
+  els.openSettings.addEventListener("click", () => { openSettings("memory-view"); });
+  els.closeSettings.addEventListener("click", closeSettings);
+  for (const tab of [...els.settingsTabs, ...els.settingsEntries]) {
+    tab.addEventListener("click", () => {
+      if (tab.classList.contains("settings-entry")) openSettings(tab.dataset.view);
+      else switchSettingsTab(tab.dataset.view);
+    });
+  }
+  els.scrollBottom.addEventListener("click", scrollToBottom);
+  els.chatScroll.addEventListener("scroll", () => {
+    const distance = els.chatScroll.scrollHeight - els.chatScroll.scrollTop - els.chatScroll.clientHeight;
+    els.scrollBottom.classList.toggle("hidden", distance < 240);
+  }, { passive: true });
   els.manualMemoryForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const key = els.memoryKey.value;
@@ -927,8 +1120,11 @@
       els.backupNotice.classList.add("error");
     } finally { els.backupExport.disabled = false; }
   });
+
+  /* ── 启动 ─────────────────────────────────── */
   if (bootstrap.mode === "fake") els.mode.textContent = "离线模拟";
   else { els.mode.textContent = "真实模型"; els.mode.classList.add("real-mode"); }
+  try { applyRail(localStorage.getItem(railKey) === "1"); } catch { applyRail(false); }
   updateClock();
   setInterval(updateClock, 60_000);
   (async () => {
