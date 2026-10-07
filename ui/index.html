@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>苏晚晚</title>
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+  <!-- SUWAN_BOOTSTRAP -->
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航与对话列表">
+      <div class="brand"><span class="brand-mark">晚</span><div><strong>苏晚晚</strong><small>本地对话</small></div></div>
+      <button id="new-session" class="new-session" type="button">＋ 新对话</button>
+      <div class="session-heading"><span>最近对话</span><label class="archive-toggle"><input id="show-archived" type="checkbox"> 已归档</label></div>
+      <nav id="sessions" class="sessions" aria-label="对话"></nav>
+      <details class="sidebar-tools">
+        <summary>资料与设置</summary>
+        <nav class="page-nav" aria-label="管理页面">
+          <button class="page-link active" type="button" data-view="chat-view">返回对话</button>
+          <button class="page-link" type="button" data-view="memory-view">记忆管理</button>
+          <button class="page-link" type="button" data-view="persona-view">晚晚档案</button>
+          <button class="page-link" type="button" data-view="diagnostics-view">设置与诊断</button>
+        </nav>
+        <p class="local-note">仅本机使用 · 配置更改后需重启</p>
+      </details>
+    </aside>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭对话列表"></button>
+    <main class="chat-panel">
+      <section id="chat-view" class="view chat-view" aria-label="对话">
+        <header class="topbar">
+          <div class="topbar-heading"><button id="sidebar-toggle" class="mobile-menu-button" type="button" aria-label="打开对话列表" title="打开对话列表">☰</button><div><h1 id="session-title">新对话</h1><p id="time-context">广州时间</p></div></div>
+          <div class="topbar-badges"><button id="archive-current" class="icon-button" type="button" aria-label="归档对话" title="归档对话">归档</button></div>
+        </header>
+        <div id="initiative-notice" class="initiative-notice hidden" role="status" aria-live="polite"></div>
+        <section id="messages" class="messages" aria-live="polite" aria-label="消息记录"></section>
+        <section id="pending-area" class="pending-area" aria-live="polite"></section>
+        <form id="composer" class="composer">
+          <label class="sr-only" for="message-input">发送给苏晚</label>
+          <textarea id="message-input" rows="1" maxlength="2000" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <div class="composer-footer"><span>Enter 发送 · Shift+Enter 换行</span><div><button id="cancel-wait" class="text-button hidden" type="button">取消等待</button><button id="query-operation" class="text-button hidden" type="button">查看发送状态</button><button id="send-button" class="send-button" type="submit">发送</button></div></div>
+        </form>
+      </section>
+
+      <section id="memory-view" class="view management-view hidden" aria-label="记忆管理">
+        <header class="management-header"><h1>记忆管理</h1><p>自动识别的事实先等待确认。修改会创建新版本；忘记会移除相关来源内容。</p></header>
+        <div id="manager-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
+        <form id="manual-memory-form" class="panel-card manual-memory-form">
+          <h2>手动添加用户记忆</h2>
+          <label for="memory-key">记忆类别</label>
+          <select id="memory-key" required>
+            <option value="profile.preferred_name">称呼</option>
+            <option value="profile.birthday">生日（MM-DD）</option>
+            <option value="preference.drink">饮品偏好</option>
+            <option value="preference.food">饮食偏好</option>
+            <option value="preference.hobby">兴趣爱好</option>
+            <option value="preference.chat_style">聊天风格</option>
+            <option value="plan.personal">个人计划</option>
+          </select>
+          <label for="memory-value">内容</label>
+          <input id="memory-value" maxlength="120" required autocomplete="off" placeholder="输入一条简短内容">
+          <button class="primary-button" type="submit">保存记忆</button>
+        </form>
+        <div class="manager-columns">
+          <section class="panel-card">
+            <div class="section-title"><h2>用户记忆</h2><span id="memory-count" class="count-badge">0</span></div>
+            <div id="memory-list" class="card-list"></div>
+          </section>
+          <section class="panel-card">
+            <div class="section-title"><h2>待确认事实</h2><span id="fact-proposal-count" class="count-badge">0</span></div>
+            <div id="fact-proposals" class="card-list"></div>
+          </section>
+          <section class="panel-card">
+            <div class="section-title"><h2>待确认人设建议</h2><span id="persona-proposal-count" class="count-badge">0</span></div>
+            <div id="persona-proposals" class="card-list"></div>
+          </section>
+        </div>
+        <section class="panel-card event-placeholder">
+          <div class="section-title"><h2>晚晚已发生的经历</h2><span id="memory-world-event-count" class="count-badge">0</span></div>
+          <div id="memory-world-events" class="card-list"></div>
+        </section>
+      </section>
+
+      <section id="persona-view" class="view management-view hidden" aria-label="晚晚档案">
+        <header class="management-header"><h1>晚晚档案</h1><p>固定身份资料只读。可确认的喜好会以新版本保存，不会改写身份锚点。</p></header>
+        <div id="persona-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
+        <div id="persona-details" class="persona-grid"></div>
+        <section class="panel-card">
+          <div class="section-title"><h2>待确认人设建议</h2><span id="persona-view-proposal-count" class="count-badge">0</span></div>
+          <div id="persona-view-proposals" class="card-list"></div>
+        </section>
+        <section class="panel-card world-panel">
+          <div class="section-title"><h2>生活事项</h2><div class="world-toolbar"><button id="advance-world" class="text-button" type="button">检查新进展</button><button id="refresh-world" class="text-button" type="button">刷新</button></div></div>
+          <p class="world-note">以下是有限的初始生活事项，不代表此前已经发生的经历。三项完成后不会自动重开。</p>
+          <div id="world-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
+          <p id="world-last-update" class="manager-meta"></p>
+          <div id="world-threads" class="world-thread-list"></div>
+        </section>
+        <section class="panel-card world-panel">
+          <div class="section-title"><h2>最近生活事件</h2><span id="world-event-count" class="count-badge">0</span></div>
+          <div id="world-events" class="card-list"></div>
+        </section>
+      </section>
+
+      <section id="diagnostics-view" class="view management-view hidden" aria-label="设置与诊断">
+        <header class="management-header"><div class="management-title-row"><h1>设置与诊断</h1><span id="mode-badge" class="mode-badge">离线模拟</span></div><p>状态检查不会调用模型。测试模型会发送一次短请求并可能产生费用。</p></header>
+        <div id="diagnostics-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
+        <div id="diagnostics-summary" class="diagnostics-grid"></div>
+        <section class="panel-card">
+          <div class="section-title"><h2>最近模型调用</h2><button id="refresh-diagnostics" class="text-button" type="button">刷新</button></div>
+          <div id="diagnostics-calls" class="table-wrap"></div>
+        </section>
+        <form id="probe-form" class="panel-card probe-form">
+          <h2>测试模型连接</h2>
+          <label for="probe-profile">模型配置</label>
+          <select id="probe-profile"><option value="chat">聊天</option><option value="analysis">分析</option><option value="world">生活事件</option></select>
+          <button class="primary-button" type="submit">发送一次测试请求</button>
+          <div id="probe-result" class="probe-result" aria-live="polite"></div>
+        </form>
+        <section class="panel-card">
+          <h2>本地配置</h2>
+          <p>手动编辑项目目录中的 <code>config.yaml</code> 和 <code>.env</code>，然后重启应用。密钥不会显示在此页面。</p>
+          <h2>数据备份与恢复</h2>
+          <p>备份包含本地对话、已确认记忆、人设版本、状态和生活事件；不会包含 <code>.env</code>、<code>config.yaml</code> 或日志。旧备份可能重新带回后来忘记的内容。</p>
+          <button id="export-backup" class="primary-button" type="button">导出数据库备份</button>
+          <p id="backup-notice" class="manager-notice hidden" role="status" aria-live="polite"></p>
+          <p>恢复前先关闭应用，在项目目录的 PowerShell 中运行：<br><code>python scripts\restore_backup.py --archive "C:\路径\备份.zip" --data-dir "C:\路径\wanwan-chatbot\data"</code><br>路径必须使用绝对路径。输入 <code>RESTORE</code> 后才会继续；运行中的应用会锁定恢复操作。恢复后再次启动，页面会生成新的本机会话令牌。</p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="forget-dialog" class="forget-dialog">
+    <form method="dialog" id="forget-form">
+      <h2>忘记这条记忆？</h2>
+      <p>会清除该事实的所有版本、来源消息，以及引用过它的晚晚回复。旧备份仍可能包含已移除内容。</p>
+      <label class="checkbox-row"><input id="redact-session-history" type="checkbox" checked> 同时移除来源对话的全部消息</label>
+      <div class="dialog-actions"><button id="cancel-forget" class="secondary-button" type="button">取消</button><button id="confirm-forget" class="danger-button" type="button">确认忘记</button></div>
+    </form>
+  </dialog>
+
+  <script src="/ui/app.js" defer></script>
+</body>
+</html>
