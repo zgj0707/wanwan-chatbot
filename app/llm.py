@@ -246,7 +246,7 @@ class LLMClient:
         response_model: type[BaseModel] | None = None,
         user_text: str | None = None,
         max_attempts_override: int | None = None,
-        reply_validator: Callable[[str], bool] | None = None,
+        reply_validator: Callable[[str], bool | str | None] | None = None,
     ) -> LLMResult:
         profile = self._profile(profile_name)
         normalized_messages = _normalize_messages(messages)
@@ -334,7 +334,10 @@ class LLMClient:
                 invalid_reason = _chat_invalid_reason(result.text, self.config.limits.max_reply_chars)
                 if invalid_reason is None and reply_validator is not None:
                     try:
-                        if not reply_validator(result.text):
+                        validation = reply_validator(result.text)
+                        if isinstance(validation, str):
+                            invalid_reason = validation or "custom_reply_validation"
+                        elif validation is False:
                             invalid_reason = "custom_reply_validation"
                     except Exception:
                         invalid_reason = "custom_reply_validation"
@@ -348,7 +351,12 @@ class LLMClient:
                         usage=result.usage,
                     )
                     if attempt < max_attempts and self._may_retry(deadline):
-                        active_messages = _repair_messages(normalized_messages, result.text, invalid_reason)
+                        active_messages = _repair_messages(
+                            normalized_messages,
+                            result.text,
+                            invalid_reason,
+                            profile.input_budget_units,
+                        )
                         if budget_units(active_messages) > profile.input_budget_units:
                             raise LLMFailure("CONTEXT_TOO_LARGE", "chat repair prompt exceeds the input budget")
                         self._wait_before_retry(deadline)
@@ -570,12 +578,52 @@ def _repair_messages(
     messages: Sequence[Mapping[str, str]],
     invalid_reply: str,
     reason: str,
+    input_budget_units: int,
 ) -> list[dict[str, str]]:
-    return [
-        *({"role": item["role"], "content": item["content"]} for item in messages),
-        {"role": "assistant", "content": invalid_reply},
-        {
-            "role": "user",
-            "content": f"请自然重写你刚才的回复，避免问题类型 {reason}；保持角色语气，只给出最终正文。",
-        },
+    repair_hints = {
+        "stage_directions": "删掉所有括号里的动作、神态或心理旁白，只留可直接发出的聊天文字。",
+        "empty_after_stage_directions": "不要用动作旁白代替回复；用一句自然聊天正文回答用户。",
+        "simple_greeting_multiple_questions": "简单问候最多问一个轻松问题，不要连问。",
+        "simple_greeting_automatic_followup": "对简单问候只回招呼或一个轻松问题，不追问睡眠、饮食或当天安排。",
+        "unsupported_coworker_event": "没有同事相关事件记录；明确说没记下，不要补写任何地点、活动或同事行程。",
+        "unsupported_event_speculation": "没有匹配记录；只说没记下，不要使用可能、也许、大概等猜测。",
+        "cat_ownership_correction": "先承认刚才弄错，再明确说年糕是你养的猫；不要转问用户和年糕的互动。",
+        "active_guard_acknowledgement": "警戒仍有效；明确承认还有一点不舒服，不说已经没事，不要求道歉或陪伴。",
+    }
+    hint = repair_hints.get(reason, "简短自然，遵守角色身份和事实边界。")
+    repair = {"role": "user", "content": f"请重写上条回复：{hint}只给最终正文。"}
+    system_prefix: list[dict[str, str]] = []
+    first_user = next((index for index, item in enumerate(messages) if item["role"] == "user"), len(messages))
+    system_prefix.extend({"role": item["role"], "content": item["content"]} for item in messages[:first_user])
+    user_indices = [index for index, item in enumerate(messages) if item["role"] == "user"]
+    if not user_indices:
+        return [*system_prefix, {"role": "assistant", "content": invalid_reply}, repair]
+    current_user_index = user_indices[-1]
+    current_user = {"role": "user", "content": messages[current_user_index]["content"]}
+    history = [
+        {"role": item["role"], "content": item["content"]}
+        for item in messages[first_user:current_user_index]
     ]
+
+    def candidate(*, include_history: bool, include_invalid_reply: bool) -> list[dict[str, str]]:
+        result = [*system_prefix]
+        if include_history:
+            result.extend(history)
+        result.append(current_user)
+        if include_invalid_reply:
+            result.append({"role": "assistant", "content": invalid_reply})
+        result.append(repair)
+        return result
+
+    # The normal prompt builder drops history before memories/events. A repair
+    # call follows the same rule so an otherwise valid turn can still recover.
+    while history and budget_units(candidate(include_history=True, include_invalid_reply=True)) > input_budget_units:
+        del history[:2]
+    if budget_units(candidate(include_history=True, include_invalid_reply=True)) <= input_budget_units:
+        return candidate(include_history=True, include_invalid_reply=True)
+    if budget_units(candidate(include_history=False, include_invalid_reply=True)) <= input_budget_units:
+        return candidate(include_history=False, include_invalid_reply=True)
+    # If the invalid text itself consumes the remaining budget, retry the
+    # current user request with the compact correction instruction only.
+    return candidate(include_history=False, include_invalid_reply=False)
+
