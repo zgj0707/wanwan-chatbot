@@ -15,8 +15,12 @@
         <div class="brand"><span class="brand-mark">晚</span><span class="brand-text"><strong>苏晚晚</strong><small>本地对话</small></span></div>
         <button id="sidebar-collapse" class="icon-button collapse-button" type="button" aria-label="收起侧栏" title="收起侧栏">«</button>
       </div>
-      <div class="sidebar-search"><input id="session-search" type="search" placeholder="搜索对话" aria-label="搜索对话"></div>
-      <button id="new-session" class="new-session" type="button"><span class="plus">＋</span><span class="label">新对话</span></button>
+      <div class="sidebar-search">
+        <span class="search-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5 14 14"/></svg></span>
+        <input id="session-search" type="search" placeholder="搜索对话" aria-label="搜索对话" autocomplete="off" spellcheck="false">
+        <button id="session-search-clear" class="search-clear hidden" type="button" aria-label="清空搜索">✕</button>
+      </div>
+      <button id="new-session" class="new-session" type="button"><span class="plus" aria-hidden="true">＋</span><span class="label">新对话</span><kbd class="new-session-kbd">N</kbd></button>
       <div class="session-heading"><span class="label">最近对话</span><label class="archive-toggle"><input id="show-archived" type="checkbox"> 已归档</label></div>
       <nav id="sessions" class="sessions" aria-label="对话"></nav>
       <div class="sidebar-foot">
@@ -42,9 +46,10 @@
       </header>
 
       <div id="chat-scroll" class="chat-scroll">
+        <div id="scroll-anchor-top" class="scroll-anchor" aria-hidden="true"></div>
         <div id="initiative-notice" class="initiative-notice hidden" role="status" aria-live="polite"></div>
         <section id="messages" class="messages" aria-live="polite" aria-label="消息记录"></section>
-        <button id="scroll-bottom" class="scroll-bottom hidden" type="button" aria-label="回到底部" title="回到底部">↓</button>
+        <button id="scroll-bottom" class="scroll-bottom hidden" type="button" aria-label="回到底部" title="回到底部"><span class="scroll-bottom-arrow" aria-hidden="true">↓</span><span id="new-message-flag" class="new-message-flag hidden" aria-hidden="true"></span></button>
       </div>
 
       <section id="pending-area" class="pending-area" aria-live="polite"></section>
@@ -59,7 +64,7 @@
           <div class="composer-actions">
             <button id="query-operation" class="text-button hidden" type="button">查看发送状态</button>
             <button id="cancel-wait" class="text-button hidden" type="button">取消等待</button>
-            <button id="send-button" class="send-button" type="submit">发送</button>
+            <button id="send-button" class="send-button" type="submit" aria-label="发送消息"><span class="send-stop-icon" aria-hidden="true"></span><span id="send-label" class="send-label">发送</span></button>
           </div>
         </div>
       </form>
@@ -172,6 +177,27 @@
       <div class="dialog-actions"><button id="cancel-forget" class="secondary-button" type="button">取消</button><button id="confirm-forget" class="danger-button" type="button">确认忘记</button></div>
     </form>
   </dialog>
+
+  <div id="toast-layer" class="toast-layer" role="region" aria-label="运行提示"></div>
+
+  <div id="shortcut-sheet" class="shortcut-sheet hidden" role="dialog" aria-modal="true" aria-label="键盘快捷键">
+    <div class="shortcut-card">
+      <header class="shortcut-head">
+        <h2>键盘快捷键</h2>
+        <button id="close-shortcuts" class="icon-button" type="button" aria-label="关闭">✕</button>
+      </header>
+      <dl class="shortcut-list">
+        <div><dt><kbd>Enter</kbd></dt><dd>发送消息</dd></div>
+        <div><dt><kbd>Shift</kbd>+<kbd>Enter</kbd></dt><dd>输入换行</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>搜索对话</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>J</kbd></dt><dd>新建对话</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>/</kbd></dt><dd>打开设置中心</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>显示这份快捷键</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>关闭当前浮层</dd></div>
+      </dl>
+      <p class="shortcut-foot">输入框内按 Esc 可直接清空草稿。</p>
+    </div>
+  </div>
 
   <script src="/ui/app.js" defer></script>
 </body>
