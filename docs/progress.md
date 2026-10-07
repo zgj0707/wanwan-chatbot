@@ -23,7 +23,7 @@
 
 ## Near-term roadmap
 
-1. After provider authentication is restored, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
+1. After the provider quota is replenished, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
 2. Review remaining user-facing behavior in `tests/fixtures/behavior_cases.json`, especially direct answers from confirmed memory, explicit virtual-role disclosure, and the user's preferred conversational tone.
 3. Continue desktop and narrow-screen review. Apply Shinsekai's dialogue/settings separation and per-component chat theme ideas; no Shinsekai code or assets are reused. Keep deferred P1 work out of scope until user feedback.
 
