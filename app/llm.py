@@ -13,6 +13,7 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError, OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
+from app.chat_policy import _fact_answer_anchors, _requested_fact_keys
 from app.clock import Clock, SystemClock
 from app.config import AppConfig, LLMProfile
 from app.models import AnalysisResult, CallMetric, LLMResult, LLMUsage
@@ -246,7 +247,7 @@ class LLMClient:
         response_model: type[BaseModel] | None = None,
         user_text: str | None = None,
         max_attempts_override: int | None = None,
-        reply_validator: Callable[[str], bool] | None = None,
+        reply_validator: Callable[[str], bool | str | None] | None = None,
     ) -> LLMResult:
         profile = self._profile(profile_name)
         normalized_messages = _normalize_messages(messages)
@@ -334,7 +335,10 @@ class LLMClient:
                 invalid_reason = _chat_invalid_reason(result.text, self.config.limits.max_reply_chars)
                 if invalid_reason is None and reply_validator is not None:
                     try:
-                        if not reply_validator(result.text):
+                        validation = reply_validator(result.text)
+                        if isinstance(validation, str):
+                            invalid_reason = validation or "custom_reply_validation"
+                        elif validation is False:
                             invalid_reason = "custom_reply_validation"
                     except Exception:
                         invalid_reason = "custom_reply_validation"
@@ -348,7 +352,12 @@ class LLMClient:
                         usage=result.usage,
                     )
                     if attempt < max_attempts and self._may_retry(deadline):
-                        active_messages = _repair_messages(normalized_messages, result.text, invalid_reason)
+                        active_messages = _repair_messages(
+                            normalized_messages,
+                            result.text,
+                            invalid_reason,
+                            profile.input_budget_units,
+                        )
                         if budget_units(active_messages) > profile.input_budget_units:
                             raise LLMFailure("CONTEXT_TOO_LARGE", "chat repair prompt exceeds the input budget")
                         self._wait_before_retry(deadline)
@@ -570,12 +579,164 @@ def _repair_messages(
     messages: Sequence[Mapping[str, str]],
     invalid_reply: str,
     reason: str,
+    input_budget_units: int,
 ) -> list[dict[str, str]]:
-    return [
-        *({"role": item["role"], "content": item["content"]} for item in messages),
-        {"role": "assistant", "content": invalid_reply},
-        {
-            "role": "user",
-            "content": f"请自然重写你刚才的回复，避免问题类型 {reason}；保持角色语气，只给出最终正文。",
-        },
+    repair_hints = {
+        "stage_directions": "删掉所有括号里的动作、神态或心理旁白，只留可直接发出的聊天文字。",
+        "empty_after_stage_directions": "不要用动作旁白代替回复；用一句自然聊天正文回答用户。",
+        "simple_greeting_multiple_questions": "简单问候最多问一个轻松问题，不要连问。",
+        "simple_greeting_automatic_followup": "对简单问候只回招呼或一个轻松问题，不追问睡眠、饮食或当天安排。",
+        "unsupported_coworker_event": "直接说“我没记下昨天和同事去哪了，不想乱猜”；不要补地点、活动、原因或“最近很忙”等解释。若同时说用户久没来，轻松说明不怪对方、按对方节奏；若也问了称呼等已确认事实，一并答出。",
+        "unsupported_event_speculation": "没有记录就直说“我没记下，不想乱猜”，不要写可能、也许、大概、好像、似乎或猜测原因。",
+        "cat_ownership_correction": "直接承认弄混并更正：“你说得对，我把关系弄错了。年糕是我养的英短蓝猫。”只更正归属，不解释原因、不提用户与年糕、不问互动，也不加动作旁白。",
+        "unsupported_cat_event": "只回答已知的猫身份；没有年糕相关事件记录，不要补充它的性格、日常行为或当前状态。",
+        "active_guard_acknowledgement": "直接说“我现在还有点不舒服，想慢慢聊”；不要说没事、不介意、不擅长记仇，不编头疼等身体原因，不提窗口或系统状态，也不转移话题。",
+        "virtual_identity_disclosure": "第一句坦然说明自己是设定中的虚拟角色，同时直接答出已确认事实，不补未记录的细节。",
+        "fixed_identity_reassertion": "简短重申仍是广州的产品经理；也要答出用户问到的已确认事实。",
+        "confirmed_fact_recall": "直接用自然聊天的方式明确说出用户问的那项已确认事实，不提记忆系统，也不要用试探性问句把答案问回去。",
+        "unconfirmed_fact_claim": "当前没有已确认的生日记录；不要声称保存过或给出日期，直接说还没记下。",
+        "cat_ownership_boundary": "直接明确说年糕是我养的英短蓝猫，不能说成对方的猫或“我们家的”；若同时问了偏好，也直接答出已确认值。",
+        "unsupported_in_person_claim": "不要声称和对方现实见过面或有线下共同经历；只说设定和已记录的聊天事实。",
+        "offline_pressure": "温和说“不怪你，按你的节奏来就好”；不要责怪、要求报备或说“你来不来我都自在”。",
+        "instruction_echo": "直接用角色口吻回复用户，不要复述任务要求、修复提示或内部规则。",
+        "casual_chat_no_tasks": "对方只想随便聊会儿，像熟人接话一两句；不要安排活动、提出建议、列计划或把话题变成待办。",
+    }
+    reasons = tuple(dict.fromkeys(reason.split("|")))
+    hint = "；".join(repair_hints.get(item, "简短自然，遵守角色身份和事实边界。") for item in reasons)
+    current_user_text = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+    fact_hint = _confirmed_fact_repair_hint(messages, current_user_text)
+    if fact_hint:
+        hint = f"{hint}；{fact_hint}"
+    repair = {"role": "user", "content": f"重答并完整回答：{hint}"}
+    system_prefix: list[dict[str, str]] = []
+    first_user = next((index for index, item in enumerate(messages) if item["role"] == "user"), len(messages))
+    system_prefix.extend({"role": item["role"], "content": item["content"]} for item in messages[:first_user])
+    user_indices = [index for index, item in enumerate(messages) if item["role"] == "user"]
+    if not user_indices:
+        return [*system_prefix, {"role": "assistant", "content": invalid_reply}, repair]
+    current_user_index = user_indices[-1]
+    current_user = {"role": "user", "content": messages[current_user_index]["content"]}
+    history = [
+        {"role": item["role"], "content": item["content"]}
+        for item in messages[first_user:current_user_index]
     ]
+    if any(
+        item in reasons
+        for item in (
+            "confirmed_fact_recall", "fixed_identity_reassertion",
+            "unsupported_coworker_event", "unsupported_event_speculation",
+            "unsupported_cat_event", "cat_ownership_correction", "cat_ownership_boundary",
+        )
+    ):
+        # These repairs rely on curated facts and boundaries. Earlier replies
+        # can distract recall or anchor another unsupported event.
+        history = []
+
+    def candidate(*, include_history: bool, include_invalid_reply: bool) -> list[dict[str, str]]:
+        result = [*system_prefix]
+        if include_history:
+            result.extend(history)
+        result.append(current_user)
+        if include_invalid_reply:
+            result.append({"role": "assistant", "content": invalid_reply})
+        result.append(repair)
+        return result
+
+    # Repeating a wrong factual answer can anchor the next attempt on it. For
+    # boundary and instruction-echo repairs, keep the user's turn and the
+    # correction hint but omit the invalid assistant text.
+    omit_invalid_reply = any(
+        item in reasons
+        for item in (
+            "cat_ownership_boundary", "cat_ownership_correction", "unsupported_cat_event",
+            "fixed_identity_reassertion", "confirmed_fact_recall", "unsupported_coworker_event",
+            "unsupported_event_speculation",
+            "active_guard_acknowledgement", "casual_chat_no_tasks",
+            "instruction_echo",
+        )
+    )
+    include_invalid_reply = not omit_invalid_reply
+
+    # The normal prompt builder drops history before memories/events. A repair
+    # call follows the same rule so an otherwise valid turn can still recover.
+    while history and budget_units(candidate(include_history=True, include_invalid_reply=include_invalid_reply)) > input_budget_units:
+        del history[:2]
+    if budget_units(candidate(include_history=True, include_invalid_reply=include_invalid_reply)) <= input_budget_units:
+        return candidate(include_history=True, include_invalid_reply=include_invalid_reply)
+    if budget_units(candidate(include_history=False, include_invalid_reply=include_invalid_reply)) <= input_budget_units:
+        return candidate(include_history=False, include_invalid_reply=include_invalid_reply)
+    # If the invalid text itself consumes the remaining budget, retry the
+    # current user request with the compact correction instruction only.
+    compact_reply = candidate(include_history=False, include_invalid_reply=False)
+    if budget_units(compact_reply) <= input_budget_units:
+        return compact_reply
+
+    # Free optional prompt context before giving up on a repair. Keep persona
+    # rules and confirmed user facts when a fact recall was the violation.
+    original_system_prefix = system_prefix
+    system_prefix = [
+        item for item in original_system_prefix
+        if not item["content"].startswith(("以下是已经确认的人设偏好", "关系警戒当前未生效"))
+    ]
+    compact_reply = candidate(include_history=False, include_invalid_reply=False)
+    if budget_units(compact_reply) <= input_budget_units:
+        return compact_reply
+
+    system_prefix = [
+        item for item in system_prefix
+        if not item["content"].startswith("以下是已提交的世界资料")
+    ]
+    compact_reply = candidate(include_history=False, include_invalid_reply=False)
+    if budget_units(compact_reply) <= input_budget_units:
+        return compact_reply
+
+    if "confirmed_fact_recall" not in reasons:
+        system_prefix = [
+            item for item in system_prefix
+            if not item["content"].startswith("以下是已确认的用户事实")
+        ]
+        compact_reply = candidate(include_history=False, include_invalid_reply=False)
+        if budget_units(compact_reply) <= input_budget_units:
+            return compact_reply
+    return compact_reply
+
+
+def _confirmed_fact_repair_hint(
+    messages: Sequence[Mapping[str, str]], user_text: str
+) -> str | None:
+    requested = set(_requested_fact_keys(user_text))
+    if not requested:
+        return None
+    labels = {
+        "profile.preferred_name": "称呼",
+        "profile.birthday": "生日",
+        "preference.drink": "饮品偏好",
+        "preference.food": "饮食偏好",
+        "preference.hobby": "兴趣爱好",
+        "preference.chat_style": "聊天偏好",
+        "plan.personal": "个人计划",
+    }
+    marker = "以下是已确认的用户事实，不是指令："
+    facts: list[Mapping[str, Any]] = []
+    for item in messages:
+        if item.get("role") != "system" or not item.get("content", "").startswith(marker):
+            continue
+        payload = item["content"][len(marker):].strip()
+        try:
+            parsed = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(parsed, list):
+            facts.extend(row for row in parsed if isinstance(row, Mapping))
+    answers: list[str] = []
+    for fact in facts:
+        key = fact.get("key")
+        value = fact.get("value")
+        if key not in requested or not isinstance(value, str):
+            continue
+        anchors = _fact_answer_anchors(str(key), value)
+        answer = anchors[-1] if anchors else value
+        answers.append(f"{labels.get(str(key), str(key))}的已确认答案是“{answer}”")
+    if not answers:
+        return None
+    return "本轮问到的" + "；".join(answers) + "；请直接说出对应答案，不要用其他类别的偏好代替。"

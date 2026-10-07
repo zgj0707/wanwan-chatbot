@@ -248,9 +248,10 @@ def test_prompt_order_and_references_include_only_injected_context():
         "system", "system", "system", "system", "system", "user", "assistant", "user"
     ]
     assert "固定身份锚点" in bundle.messages[0]["content"]
-    assert "回复节奏与示例" in bundle.messages[0]["content"]
-    assert "不想凭空猜" in bundle.messages[0]["content"]
-    assert "不是用户的猫" in bundle.messages[0]["content"]
+    assert "简单问候最多一个轻松问题" in bundle.messages[0]["content"]
+    assert "早晨可问“昨晚睡得还好吗？”" in bundle.messages[0]["content"]
+    assert "没有记录时直说没记下，不猜或补经历" in bundle.messages[0]["content"]
+    assert "不是对方或共同的猫" in bundle.messages[0]["content"]
     assert "最多一个" in bundle.messages[0]["content"]
     assert "已经确认的人设偏好" in bundle.messages[1]["content"]
     assert "character_time" in bundle.messages[2]["content"]

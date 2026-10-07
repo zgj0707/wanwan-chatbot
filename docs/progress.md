@@ -1,6 +1,6 @@
 # Progress
 
-> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. One isolated real-provider smoke succeeded; full T12 behavior, quality, cost, and latency validation remains NOT_RUN.
+> Snapshot: 2026-10-07 (Asia/Tokyo). T00–T11 are complete. T12 real-provider iteration remains incomplete: B26 and B28 each completed 18/19 turns; B27 PER-07 passed as a targeted case; B29 PER-08 retest stopped because the provider quota was exhausted (client reported `UPSTREAM_AUTH`). User subjective behavior sign-off remains pending.
 
 ## Project baseline
 
@@ -16,14 +16,16 @@
 - Chat UI now prioritizes the conversation and session list, moves management pages below the history, adds a mobile sidebar drawer, and offers optional starter prompts that fill the composer without sending.
 - Runtime chat prompting has a separate conversational style guide with concise Chinese examples. Simple greetings should receive a natural greeting and at most one non-assumptive follow-up.
 - Persona clarification: 年糕 is 苏晚's British Shorthair cat, not the user's cat. The prompt must not imply that the user lives with, feeds, cares for, or is woken by 年糕 unless the user has explicitly described that interaction.
-- Local real-mode smoke: one isolated temporary-database chat completed successfully with two provider calls (analysis and chat). This is evidence of basic connectivity only, not full T12 acceptance.
+- Initial local real-mode smoke: one isolated temporary-database chat completed with two provider calls (analysis and chat); full T12 evidence is recorded below.
+- Chat polish now has concise live-chat guidance, boundary checks for explicit guard questions, unsupported coworker events, and cat-ownership corrections. Obvious parenthetical action asides are cleaned from saved chat text; a simple greeting that over-asks is normalized to one conversational question.
+- Historical B12 met the original 19-turn threshold. Later B26/B28 full batches each completed 18/19 turns, retrieved 9/9 facts from completed turns, injected the expected event, and had no source-reference leaks; details and failures are recorded in [acceptance.md](acceptance.md).
 - The project folder has been moved to `<project-root>`; ignored `.env`, `config.yaml`, `.venv`, and `data/` remain local and are not part of the PR.
 
 ## Near-term roadmap
 
-1. Complete PRD T12 using its isolated database and aggregate budget limits: structured-output reliability, a 19-turn conversation, semantic retrieval, latency, and cost evidence.
-2. Manually review all 13 behavior cases, especially greeting tone, confirmed-memory boundaries, and 年糕's ownership and interaction boundary.
-3. Review desktop and narrow-screen use after real use. Keep deferred P1 work out of scope until v1 acceptance and a separate scope decision.
+1. After the provider quota is replenished, rerun PER-08 and the full 19-turn plan. Keep actual model cost unknown until a rate card is available.
+2. Review remaining user-facing behavior in `tests/fixtures/behavior_cases.json`, especially direct answers from confirmed memory, explicit virtual-role disclosure, and the user's preferred conversational tone.
+3. Continue desktop and narrow-screen review. Apply Shinsekai's dialogue/settings separation and per-component chat theme ideas; no Shinsekai code or assets are reused. Keep deferred P1 work out of scope until user feedback.
 
 ## Source copies and SHA-256
 
@@ -170,7 +172,17 @@
 - Removed the temporary clean-install tree and synthetic acceptance data after verification. No real credentials were read or used.
 - Quality checks: `pip check` reported no broken requirements; `compileall`, `node --check ui/app.js`, and `git diff --check` passed. Git emitted only a README line-ending conversion warning during `git diff --check`.
 
-## Remaining authorization-gated work
+## Remaining work
 
-- T12 — PARTIAL. A single isolated basic smoke confirms the local real-mode analysis/chat path. JSON reliability probes, the 19-turn conversation, semantic retrieval review, latency, and cost validation remain NOT_RUN. Run them only within the PRD's isolated-data and aggregate-budget controls.
-- See [acceptance.md](acceptance.md) for the evidence matrix and known limits. Offline P0 functionality T00–T11 is complete; full real-provider behavior remains unverified.
+- B12 original T12 metrics met the recorded structured-output and 19-turn thresholds; cost remains unknown because no rate card is configured.
+- B13 rechecked the 19-turn plan after prompt work: 18/19 turns completed, 9/9 completed retrieval cases hit, zero source-reference leaks, and 7.304-second API end-to-end P95. PER-07 hit CONTEXT_TOO_LARGE during repair.
+- B13 also exposed a shared-cat phrasing, a non-answer to an injected hobby question, and an absence-reporting request. The current follow-up adds checks for these cases and shortens repair prompts.
+- Five modified Python files pass py_compile; 18 synthetic policy assertions pass. B14 live re-evaluation, full pytest, and user behavior sign-off remain NOT_RUN.
+
+## T12 conversation-quality follow-up
+
+- Added targeted guards for virtual identity, fixed identity, confirmed-fact recall, 年糕 ownership, and pressure after the user has been away. Confirmed-fact checks use only facts that remained in the current PromptBundle.
+- Kept provider repair within the PRD limit of two chat attempts per turn and shortened repair messages to reduce context-overflow risk.
+- B19–B29 used 343 provider attempts across independently capped batches. B26 and B28 each completed 18/19 turns; targeted B27 PER-07 passed; B29 PER-08 could not reach quality evaluation because the provider quota was exhausted (client reported `UPSTREAM_AUTH`). All behavior fixture manual results remain NOT_RUN. See [acceptance.md](acceptance.md).
+- Offline simulated tuning only: morning greetings may retain one time-appropriate light question; multi-question goodnight replies are normalized. Cat-ownership correction and confirmed-hobby answer-back guards have deterministic regressions.
+- Added six chat-policy simulation tests and aligned stale prompt assertions. Full local offline suite: 157 passed, with one existing Starlette/httpx TestClient deprecation warning. No live API calls; real-model quality and manual persona sign-off remain NOT_RUN.
