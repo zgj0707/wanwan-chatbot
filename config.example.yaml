@@ -1,0 +1,46 @@
+schema_version: 1
+mode: fake
+server:
+  host: 127.0.0.1
+  port: 8000
+time:
+  character_timezone: Asia/Shanghai
+  display_timezone: Asia/Tokyo
+profiles:
+  chat:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-flash-character
+    api_key_env: SUWAN_API_KEY
+    temperature: 0.7
+    max_tokens: 600
+    timeout_seconds: 20
+    json_mode: false
+    input_budget_units: 9000
+  analysis:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-flash-character
+    api_key_env: SUWAN_API_KEY
+    temperature: 0.0
+    max_tokens: 700
+    timeout_seconds: 10
+    json_mode: true
+    input_budget_units: 4000
+  world:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-flash-character
+    api_key_env: SUWAN_API_KEY
+    temperature: 0.4
+    max_tokens: 400
+    timeout_seconds: 10
+    json_mode: true
+    input_budget_units: 2000
+limits:
+  turn_deadline_seconds: 45
+  max_user_chars: 2000
+  max_reply_chars: 400
+  history_turns: 8
+  memory_top_k: 5
+  world_events_top_k: 3
+  initiative_enabled: true
+  initiative_min_gap_hours: 6
+  auto_world_update: true
