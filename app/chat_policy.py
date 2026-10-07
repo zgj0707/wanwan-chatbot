@@ -10,7 +10,7 @@ _STAGE_DIRECTION = re.compile(
     re.IGNORECASE,
 )
 _SIMPLE_GREETING = re.compile(
-    r"^(?:早上好|早安|早|你好|嗨|哈喽|晚上好)[呀啊哈哦～~!！。…，,. ]*$"
+    r"^(?:早上好|早安|早|你好|嗨|哈喽|晚上好|晚安)[呀啊哈哦～~!！。…，,. ]*$"
 )
 
 
@@ -295,7 +295,7 @@ def clean_chat_reply(reply: str, user_text: str | None = None) -> str:
         too_many_questions = cleaned.count("?") + cleaned.count("？") > 1
         overfamiliar_followup = any(
             term in cleaned for term in (
-                "睡", "睡觉", "吃饭", "吃了", "安排", "计划", "做什么", "刚泡",
+                "吃饭", "吃了", "安排", "计划", "做什么", "刚泡",
                 "一起去", "一起喝", "阳台", "吹吹风", "出门", "过来", "来我家",
             )
         )
