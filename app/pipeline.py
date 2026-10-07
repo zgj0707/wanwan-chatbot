@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Callable, Mapping
 
+from app.chat_policy import clean_chat_reply, reply_boundary_violation
 from app.config import AppConfig
 from app.errors import APIProblem, problem_for_code
 from app.llm import LLMClient, LLMFailure
@@ -310,7 +311,22 @@ def handle_turn(
                 raise problem_for_code("DATA_CORRUPT", request.operation_id) from exc
 
             try:
-                reply = llm_client.generate("chat", bundle.messages, request.operation_id, deadline)
+                guard_active = (
+                    projected_for_chat.guard_until is not None
+                    and projected_for_chat.guard_until > local_time.character_time
+                )
+                reply = llm_client.generate(
+                    "chat",
+                    bundle.messages,
+                    request.operation_id,
+                    deadline,
+                    reply_validator=lambda text: reply_boundary_violation(
+                        request.text,
+                        text,
+                        guard_active=guard_active,
+                        world_events=context["events"],
+                    ),
+                )
             except LLMFailure as exc:
                 raise problem_for_code(exc.code, request.operation_id) from exc
 
@@ -320,7 +336,7 @@ def handle_turn(
                 operation_id=request.operation_id,
                 session_id=request.session_id,
                 user_text=request.text,
-                assistant_text=reply.text.strip(),
+                assistant_text=clean_chat_reply(reply.text, request.text),
                 now=now,
                 state=persisted_state,
                 persona_version_id=bundle.persona_version_id,
@@ -590,3 +606,4 @@ def handle_initiative(
             raise problem_for_code("DATABASE_ERROR", request.operation_id) from exc
     finally:
         guard.__exit__(None, None, None)
+
