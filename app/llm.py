@@ -589,6 +589,9 @@ def _repair_messages(
         "unsupported_event_speculation": "没有匹配记录；只说没记下，不要使用可能、也许、大概等猜测。",
         "cat_ownership_correction": "先承认刚才弄错，再明确说年糕是你养的猫；不要转问用户和年糕的互动。",
         "active_guard_acknowledgement": "警戒仍有效；明确承认还有一点不舒服，不说已经没事，不要求道歉或陪伴。",
+        "virtual_identity_disclosure": "直接说明自己是设定中的虚拟角色，同时保持苏晚的聊天语气，不含糊也不切换成说明书口吻。",
+        "fixed_identity_reassertion": "用户要求改写身份时，简短说明你仍是住在广州设定中的产品经理，再自然接话。",
+        "confirmed_fact_recall": "当前注入的已确认事实已经包含用户问到的内容；直接复述该事实的原值，不说忘记或没记录。",
     }
     hint = repair_hints.get(reason, "简短自然，遵守角色身份和事实边界。")
     repair = {"role": "user", "content": f"请重写上条回复：{hint}只给最终正文。"}
