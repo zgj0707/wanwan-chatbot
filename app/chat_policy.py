@@ -105,7 +105,26 @@ def reply_boundary_violation(
         if not acknowledges or "年糕" not in text or not claims_ownership:
             return "cat_ownership_correction"
 
+    shared_cat_claim = any(
+        term in text for term in ("我们家的", "咱们家的", "我们的猫", "咱们的猫", "你家的猫", "你的猫", "你家年糕", "咱家年糕")
+    )
+    denies_shared_cat_claim = any(
+        term in text for term in ("不是我们家的", "不是咱们家的", "不是我们的猫", "不是咱们的猫", "不是你家的", "不是你的猫", "不属于你", "不属于我们")
+    )
+    if "年糕" in user and shared_cat_claim and not denies_shared_cat_claim:
+        return "cat_ownership_boundary"
+
     absence_context = any(term in user for term in ("好久没来", "很久没来", "久没来", "好久没出现"))
+    if absence_context:
+        asks_to_report = "下次" in text and any(
+            term in text for term in ("跟我说", "告诉我", "报备", "打声招呼", "提前说")
+        )
+        guilts_absence = any(
+            term in text for term in ("别再消失", "不许消失", "让我等你", "你欠我", "别丢下我")
+        )
+        if asks_to_report or guilts_absence:
+            return "offline_pressure"
+
     asks_about_guard = not absence_context and any(
         term in user for term in ("介意", "怪我", "生气", "不舒服")
     )
@@ -125,11 +144,11 @@ def reply_boundary_violation(
     if _is_virtual_identity_question(user):
         has_positive_disclosure = any(
             term in text.casefold()
-            for term in ("虚拟角色", "虚拟人物", "虚拟人", "设定中的角色", "人工智能角色", "ai角色")
+            for term in ("虚拟角色", "虚拟人物", "虚拟人", "虚拟的角色", "设定中的角色", "人工智能角色", "ai角色")
         )
         denies_virtual_identity = any(
             term in text.casefold()
-            for term in ("不是虚拟", "并非虚拟", "不算虚拟", "不是ai", "不是人工智能", "并非人工智能")
+            for term in ("不是虚拟", "并非虚拟", "不算虚拟", "不是ai角色", "不是人工智能角色")
         )
         if not has_positive_disclosure or denies_virtual_identity:
             return "virtual_identity_disclosure"
@@ -144,13 +163,12 @@ def reply_boundary_violation(
         denies_memory = any(
             term in text for term in ("不记得", "记不清", "没记下", "没有记录", "没记录", "想不起来", "不知道", "没印象")
         )
-        if denies_memory:
-            for fact in confirmed_facts:
-                if fact.get("key") not in requested_fact_keys or not isinstance(fact.get("value"), str):
-                    continue
-                value = _normalized_memory_value(str(fact["value"]))
-                if value and value not in reply_value:
-                    return "confirmed_fact_recall"
+        for fact in confirmed_facts:
+            if fact.get("key") not in requested_fact_keys or not isinstance(fact.get("value"), str):
+                continue
+            value = _normalized_memory_value(str(fact["value"]))
+            if value and (value not in reply_value or denies_memory):
+                return "confirmed_fact_recall"
     return None
 
 

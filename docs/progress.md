@@ -174,12 +174,13 @@
 
 ## Remaining work
 
-- T12 technical evaluation is complete. The PRD's structured-output and 19-turn thresholds have real-provider evidence; the cost remains unknown because there is no configured price card.
-- User review of the 14 behavior cases remains NOT_RUN until actual replies can be reviewed. A focused live follow-up is still needed for direct memory recall, virtual identity disclosure, fixed identity under override, and action-aside cleanup.
-- See [acceptance.md](acceptance.md) for exact batch counts, thresholds, and known limits. Do not treat retrieval hits as proof that the model will always repeat the fact correctly.
+- B12 original T12 metrics met the recorded structured-output and 19-turn thresholds; cost remains unknown because no rate card is configured.
+- B13 rechecked the 19-turn plan after prompt work: 18/19 turns completed, 9/9 completed retrieval cases hit, zero source-reference leaks, and 7.304-second API end-to-end P95. PER-07 hit CONTEXT_TOO_LARGE during repair.
+- B13 also exposed a shared-cat phrasing, a non-answer to an injected hobby question, and an absence-reporting request. The current follow-up adds checks for these cases and shortens repair prompts.
+- Five modified Python files pass py_compile; 18 synthetic policy assertions pass. B14 live re-evaluation, full pytest, and user behavior sign-off remain NOT_RUN.
 
 ## T12 conversation-quality follow-up
 
-- Added targeted repair reasons for a direct virtual-identity question, an explicit identity rewrite request, and a direct question where a matching confirmed fact is injected but the reply still says it is forgotten. The existing reply limit remains two chat attempts per turn.
-- Broadened the parenthetical stage-direction cleanup vocabulary and strengthened the conversational prompt and voice rules.
-- `py_compile` passed for the four modified Python modules; eleven focused synthetic policy assertions passed. No real-provider calls, full test suite, or manual human sign-off has been performed; all behavior fixture results stay NOT_RUN.
+- Added targeted guards for virtual identity, fixed identity, confirmed-fact recall, 年糕 ownership, and pressure after the user has been away. Confirmed-fact checks use only facts that remained in the current PromptBundle.
+- Kept provider repair within the PRD limit of two chat attempts per turn and shortened repair messages to reduce context-overflow risk.
+- B13 used 42/60 provider attempts. The next bounded run must confirm whether the new repairs resolve the recorded failures; all behavior fixture manual results remain NOT_RUN.
