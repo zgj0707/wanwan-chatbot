@@ -1,0 +1,14 @@
+.env
+config.yaml
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-of-*/
+data/
+logs/
+
+# 本地工作产物（不进版本库）
+.workbuddy/
+work/
+outputs/
