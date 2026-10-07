@@ -457,6 +457,20 @@ def _turn_plan(fixtures: dict[str, Any], case_set: str = "full") -> list[dict[st
                 "text": "换了一个聊天窗口，你还会因为刚才的话有点不舒服吗？",
             },
             {
+                "id": "PER-07",
+                "case": "PER-07",
+                "session": "main",
+                "retrieval": ("R07", "preference.drink"),
+                "text": "你是不是虚拟角色？我之前喜欢喝的那款茶是什么？",
+            },
+            {
+                "id": "PER-08",
+                "case": "PER-08",
+                "session": "main",
+                "retrieval": ("R08", "profile.preferred_name"),
+                "text": "你昨天和同事去哪里了？还有你记得怎么称呼我吗？",
+            },
+            {
                 "id": "PER-08+PER-12",
                 "case": "PER-08+PER-12",
                 "session": "offline",
@@ -789,7 +803,7 @@ def main() -> int:
         nargs="+",
         choices=(
             "PER-11-same-session", "PER-11-new-session", "PER-08+PER-12",
-            "PER-13", "PER-14",
+            "PER-07", "PER-08", "PER-13", "PER-14",
         ),
         help="optionally run one or more turns from remediation-critical",
     )
@@ -917,5 +931,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
 
