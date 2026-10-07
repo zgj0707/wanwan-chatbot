@@ -232,7 +232,7 @@ def test_prompt_over_budget_returns_413_without_committing_a_turn(client_factory
     client, app = client_factory(fake, config)
     session_id = new_session(client)
 
-    response = send(client, session_id, "问" * 800)
+    response = send(client, session_id, "问" * 500)
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "CONTEXT_TOO_LARGE"
