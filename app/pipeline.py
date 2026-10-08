@@ -259,6 +259,7 @@ def handle_turn(
                         request.text,
                         context["facts"],
                         top_k=config.limits.memory_top_k,
+                        now=now,
                     )
                 except MemoryDataUnavailable:
                     warnings.append("MEMORY_UNAVAILABLE")

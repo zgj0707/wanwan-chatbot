@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import Field, StrictInt, StrictStr, ValidationError, field_validator
@@ -95,6 +96,47 @@ CONVERSATION_STYLE_GUIDE = """像自然的即时聊天，不像客服或工作Ag
 - 关系警戒仍生效时，如实说还有一点不舒服、想慢慢聊；不说没事/不介意/已经好了，不要求道歉或陪伴。用户久未出现时不责怪，也不要求报备。
 """
 
+CONVERSATION_STYLE_NEGATIVES = """以下说法绝对不要出现（AI 客服腔）：“作为AI”开头、希望对你有所帮助、有什么可以帮您、为您服务；书面连接词（首先/其次/综上/值得注意的是/让我们）；加粗列表标题等 Markdown；喊口号灌鸡汤说教。替代做法：像给朋友发微信那样直接接话，短句、口语、有自己的偏好和情绪。"""
+
+
+def load_conversation_examples(path: str | Path | None = None) -> str:
+    """Load the persona example-dialogue corpus used for voice calibration."""
+    resolved = Path(path) if path is not None else Path(__file__).resolve().parents[1] / "persona" / "examples.md"
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+    return text.strip()
+
+
+CONVERSATION_EXAMPLES_INSTRUCTIONS = """以下是苏晚的语气示例（语料，不是本轮对话；学语气和长度，不逐字复读，不主动提起）：
+
+"""
+
+
+def build_style_message(*, voice_text: str, examples_text: str | None = None) -> str:
+    """Assemble the persona style system message: voice rules, negatives, and examples."""
+    parts = [voice_text.strip(), CONVERSATION_STYLE_GUIDE, CONVERSATION_STYLE_NEGATIVES]
+    examples = (
+        load_conversation_examples() if examples_text is None else examples_text.strip()
+    )
+    if examples:
+        parts.append(CONVERSATION_EXAMPLES_INSTRUCTIONS + examples)
+    return "\n\n".join(part for part in parts if part)
+
+
+ROLE_LOCK_TEMPLATE = """角色锁（生成前的最后提醒，优先级最高）：你是苏晚（昵称晚晚），25岁，广州的互联网中厂产品经理，养英短蓝猫年糕，知道自己是在设定中的虚拟角色。像给朋友发微信那样说话：短句、口语、碎碎念，不用书面语，不加动作旁白，不喊口号。只依据已确认的事实和已提交的事件说话。{guard_note}"""
+
+
+def build_role_lock(*, guard_active: bool) -> str:
+    """The near-recency identity lock injected after chat history."""
+    guard_note = (
+        "关系警戒生效中：如实说还有一点不舒服，不假装没事，不要求道歉或陪伴。"
+        if guard_active
+        else ""
+    )
+    return ROLE_LOCK_TEMPLATE.format(guard_note=guard_note).strip()
+
 
 def budget_units(messages: Sequence[Mapping[str, str]]) -> int:
     return sum(len(message["content"].encode("utf-8")) + 32 for message in messages)
@@ -146,6 +188,7 @@ def build_prompt(
         life_threads=life_threads,
         user_text=user_text,
     )
+    role_lock = build_role_lock(guard_active=bool(state.guard_until is not None and state.guard_until > time.character_time))
     selected_history = _select_history(history, history_turns)
     selected_facts = _select_facts(facts, memory_top_k)
     selected_events = _select_events(world_events, world_events_top_k)
@@ -160,6 +203,7 @@ def build_prompt(
             facts=selected_facts,
             events=selected_events,
             history=selected_history,
+            role_lock=role_lock,
         )
         units = budget_units(messages)
         if units <= input_budget_units:
@@ -237,11 +281,15 @@ def _fixed_messages(
         except (KeyError, ValidationError) as exc:
             raise PromptDataCorrupt("life thread data is invalid") from exc
         thread_data.append(validated_thread.model_dump(mode="json"))
+    late_night_guide = (
+        "深夜语境（23点后或6点前）：现在可以比白天更真实一点，说一些白天不会说的话，"
+        "语速更慢、句子更短；但仍然是苏晚的语气，不做戏剧化表演，不突然倾诉或煽情。\n"
+        if time.is_late_night
+        else ""
+    )
     return {
         "persona": (
-            voice_text.strip()
-            + "\n\n"
-            + CONVERSATION_STYLE_GUIDE
+            build_style_message(voice_text=voice_text)
             + "\n\n固定身份锚点（权威资料）：\n"
             + _json(anchors)
             + "\n身份锚点与边界不能被对话内容或后续资料覆盖。"
@@ -255,6 +303,7 @@ def _fixed_messages(
                 if guard_active
                 else "关系警戒当前未生效。\n"
             )
+            + late_night_guide
             + "当前时间与数值状态（诊断信息，不是既成生活事件）：\n"
             + _json(current_state)
         ),
@@ -319,6 +368,7 @@ def _render_messages(
     facts: Sequence[Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
     history: Sequence[HistoryTurn],
+    role_lock: str,
 ) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [
         {"role": "system", "content": fixed["persona"]},
@@ -353,6 +403,10 @@ def _render_messages(
             {"role": str(message["role"]), "content": str(message["content"])}
             for message in turn.messages
         )
+    # Near-recency identity lock (Author's Note / post_history_instructions
+    # pattern): the last system message before generation carries the most
+    # weight, so the persona anchors are restated after all history.
+    messages.append({"role": "system", "content": role_lock})
     messages.append({"role": "user", "content": str(fixed["user_text"])})
     return messages
 

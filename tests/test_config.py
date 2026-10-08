@@ -51,7 +51,7 @@ def test_example_configuration_loads_with_fixed_local_boundary():
     assert config.server.port == 8000
     assert config.time.character_timezone == "Asia/Shanghai"
     assert config.time.display_timezone == "Asia/Tokyo"
-    assert config.profiles.chat.input_budget_units == 9000
+    assert config.profiles.chat.input_budget_units == 12000
 
 
 def test_omitted_optional_values_use_example_defaults(tmp_path: Path):

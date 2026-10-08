@@ -116,6 +116,7 @@ def create_app(
     )
     app.state.config = config
     app.state.data_dir = runtime_data_dir.resolve()
+    app.state.project_dir = root
     app.state.llm_client = llm_client
     app.state.repository = repository
     app.state.world_service = world_service
@@ -143,7 +144,7 @@ def create_app(
 
         response.headers["Content-Security-Policy"] = (
             "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
-            "base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none"
+            "img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -182,9 +183,17 @@ def create_app(
     def styles() -> FileResponse:
         return FileResponse(ui_dir / "style.css", media_type="text/css")
 
+    @app.get("/ui/life.css", include_in_schema=False)
+    def life_styles() -> FileResponse:
+        return FileResponse(ui_dir / "life.css", media_type="text/css")
+
     @app.get("/ui/app.js", include_in_schema=False)
     def script() -> FileResponse:
         return FileResponse(ui_dir / "app.js", media_type="text/javascript")
+
+    @app.get("/ui/assets/avatar.png", include_in_schema=False)
+    def avatar_image() -> FileResponse:
+        return FileResponse(ui_dir / "assets" / "avatar.png", media_type="image/png")
 
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     def settings() -> HTMLResponse:

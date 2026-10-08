@@ -197,7 +197,7 @@ def apply_analysis_delta(
     now_utc = _aware_utc(now)
     valence = max(-100, min(100, projection.valence + delta.valence))
     energy = max(0, min(100, projection.energy + delta.energy))
-    closeness = max(0, min(100, projection.closeness + delta.closeness))
+    closeness = max(0, min(100, _decay_closeness_gain(projection.closeness, delta.closeness)))
 
     write_character = projection.decay_changed or delta.valence != 0 or delta.energy != 0
     character_updated_at = now_utc if delta.valence != 0 or delta.energy != 0 else projection.character_updated_at
@@ -222,6 +222,21 @@ def apply_analysis_delta(
         relationship_version=projection.relationship.version + int(write_relationship),
         write_relationship=write_relationship,
     )
+
+
+def _decay_closeness_gain(current: int, delta: int) -> int:
+    """Closeness grows with diminishing returns: full gain below 60, half from
+    60, quarter from 85. Losses (offense) are never softened; a gain of at
+    least one is always kept so high closeness is reachable, only slower."""
+    if delta <= 0:
+        return current + delta
+    factor = 1.0
+    if current >= 85:
+        factor = 0.25
+    elif current >= 60:
+        factor = 0.5
+    gain = max(1, round(delta * factor)) if delta > 0 else 0
+    return min(100, current + gain)
 
 
 def time_context(
