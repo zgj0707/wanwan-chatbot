@@ -153,6 +153,60 @@ class MemoryCreateRequest(StrictModel):
         return value.strip() if isinstance(value, str) else value
 
 
+MATERIAL_PILLARS = Literal[
+    "work_diary", "photo_aesthetics", "night_emotion", "cat_ai_girl", "uncategorized"
+]
+MATERIAL_HOOKS = Literal[
+    "contrast", "specific_number", "suspense_question",
+    "identity_resonance", "cat_hook", "scene_hook", "none",
+]
+
+
+class MaterialCreateRequest(StrictModel):
+    message_id: StrictStr
+    pillar: MATERIAL_PILLARS
+    hook_type: MATERIAL_HOOKS = "none"
+    note: StrictStr | None = Field(default=None, max_length=200)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def empty_note_becomes_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+class MaterialUpdateRequest(StrictModel):
+    pillar: MATERIAL_PILLARS | None = None
+    hook_type: MATERIAL_HOOKS | None = None
+    note: StrictStr | None = Field(default=None, max_length=200)
+    status: Literal["saved", "discarded"] | None = None
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def empty_note_becomes_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+class ChatApiUpdateRequest(StrictModel):
+    """Settings-center update for chat/analysis/world endpoints. Key stays local."""
+    base_url: StrictStr = Field(min_length=1, max_length=500)
+    model: StrictStr = Field(min_length=1, max_length=200)
+    model_analysis: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    model_world: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    api_key: StrictStr | None = Field(default=None, max_length=400)
+    api_key_env: StrictStr = Field(default="SUWAN_API_KEY", pattern=r"^[A-Z][A-Z0-9_]*$")
+
+
+class WeatherUpdateRequest(StrictModel):
+    provider: Literal["open_meteo", "off"]
+    city: StrictStr = Field(default="", max_length=40)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
 class MemoryEditRequest(StrictModel):
     value: StrictStr = Field(min_length=1, max_length=120)
 

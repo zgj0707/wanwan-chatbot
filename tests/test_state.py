@@ -245,7 +245,7 @@ def test_prompt_order_and_references_include_only_injected_context():
     bundle = build_prompt(**args)
 
     assert [message["role"] for message in bundle.messages] == [
-        "system", "system", "system", "system", "system", "user", "assistant", "user"
+        "system", "system", "system", "system", "system", "user", "assistant", "system", "user"
     ]
     assert "固定身份锚点" in bundle.messages[0]["content"]
     assert "简单问候最多一个轻松问题" in bundle.messages[0]["content"]
@@ -261,6 +261,9 @@ def test_prompt_order_and_references_include_only_injected_context():
     ]
     assert life["events"][0]["id"] == "event-1"
     assert json.loads(bundle.messages[4]["content"].split("\n", 1)[1])[0]["id"] == "fact-1"
+    assert "角色锁" in bundle.messages[-2]["content"]
+    assert "苏晚" in bundle.messages[-2]["content"]
+    assert "微信" in bundle.messages[-2]["content"]
     assert bundle.persona_version_id == "persona-v1"
     assert bundle.fact_ids == ("fact-1",)
     assert bundle.event_ids == ("event-1",)
@@ -295,8 +298,8 @@ def test_prompt_can_keep_an_initiative_assistant_message_without_fabricating_a_u
 
     bundle = build_prompt(**args)
 
-    assert [message["role"] for message in bundle.messages[-2:]] == ["assistant", "user"]
-    assert bundle.messages[-2]["content"] == "今天广州下了点雨。"
+    assert [message["role"] for message in bundle.messages[-3:]] == ["assistant", "system", "user"]
+    assert bundle.messages[-3]["content"] == "今天广州下了点雨。"
 
 
 def test_prompt_applies_fact_and_world_event_top_k_ordering():

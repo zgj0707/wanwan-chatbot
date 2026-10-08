@@ -10,7 +10,7 @@ from typing import BinaryIO
 from app.clock import Clock, SystemClock
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 MUTATION_LOCK = threading.Lock()
 _registry_lock = threading.Lock()
 _held_paths: set[str] = set()
@@ -31,6 +31,7 @@ REQUIRED_TABLES = frozenset(
         "prompt_refs",
         "app_meta",
         "call_metrics",
+        "materials",
     }
 )
 REQUIRED_INDEXES = frozenset(
@@ -43,6 +44,7 @@ REQUIRED_INDEXES = frozenset(
         "idx_operations_status",
         "idx_call_metrics_created",
         "uq_facts_active_key",
+        "idx_materials_status_created",
     }
 )
 
@@ -120,6 +122,8 @@ SCHEMA_STATEMENTS = (
         canonical_hash TEXT NOT NULL CHECK(length(canonical_hash) = 64),
         status TEXT NOT NULL CHECK(status IN ('active', 'superseded', 'forgotten')),
         origin TEXT NOT NULL CHECK(origin IN ('message', 'manual')),
+        importance REAL NOT NULL DEFAULT 1.0 CHECK(importance >= 0.5 AND importance <= 1.0),
+        last_prompt_at TEXT,
         supersedes_id TEXT REFERENCES facts(id),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -223,6 +227,23 @@ SCHEMA_STATEMENTS = (
     "CREATE INDEX idx_operations_status ON operations(status)",
     "CREATE INDEX idx_call_metrics_created ON call_metrics(created_at)",
     'CREATE UNIQUE INDEX uq_facts_active_key ON facts(namespace, subject_id, "key") WHERE status = \'active\'',
+    """
+    CREATE TABLE materials (
+        id TEXT PRIMARY KEY CHECK(length(id) = 36),
+        message_id TEXT NOT NULL REFERENCES messages(id),
+        role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+        session_id TEXT NOT NULL REFERENCES sessions(id),
+        snapshot_text TEXT NOT NULL CHECK(length(snapshot_text) > 0),
+        pillar TEXT NOT NULL CHECK(pillar IN ('work_diary', 'photo_aesthetics', 'night_emotion', 'cat_ai_girl', 'uncategorized')),
+        hook_type TEXT NOT NULL CHECK(hook_type IN ('contrast', 'specific_number', 'suspense_question', 'identity_resonance', 'cat_hook', 'scene_hook', 'none')),
+        note TEXT CHECK(note IS NULL OR length(note) <= 200),
+        status TEXT NOT NULL CHECK(status IN ('saved', 'discarded', 'invalidated')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(message_id)
+    )
+    """,
+    "CREATE INDEX idx_materials_status_created ON materials(status, created_at)",
 )
 
 
@@ -232,6 +253,67 @@ class SchemaVersionError(RuntimeError):
 
 class SchemaError(RuntimeError):
     """Raised when the database is structurally incomplete or inconsistent."""
+
+
+# Incremental migrations: {current_version: (target_version, statements)}.
+# Each step only adds structures; existing rows and columns are never rewritten.
+MIGRATIONS: dict[int, tuple[int, tuple[str, ...]]] = {
+    1: (
+        2,
+        (
+            """
+            CREATE TABLE materials (
+                id TEXT PRIMARY KEY CHECK(length(id) = 36),
+                message_id TEXT NOT NULL REFERENCES messages(id),
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                session_id TEXT NOT NULL REFERENCES sessions(id),
+                snapshot_text TEXT NOT NULL CHECK(length(snapshot_text) > 0),
+                pillar TEXT NOT NULL CHECK(pillar IN ('work_diary', 'photo_aesthetics', 'night_emotion', 'cat_ai_girl', 'uncategorized')),
+                hook_type TEXT NOT NULL CHECK(hook_type IN ('contrast', 'specific_number', 'suspense_question', 'identity_resonance', 'cat_hook', 'scene_hook', 'none')),
+                note TEXT CHECK(note IS NULL OR length(note) <= 200),
+                status TEXT NOT NULL CHECK(status IN ('saved', 'discarded', 'invalidated')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(message_id)
+            )
+            """,
+            "CREATE INDEX idx_materials_status_created ON materials(status, created_at)",
+        ),
+    ),
+    2: (
+        3,
+        (
+            # Memory decay (gentle, never deletes): importance weights recall,
+            # last_prompt_at feeds the recency factor. Existing rows keep
+            # sensible defaults: identity facts are heavy, others normal.
+            "ALTER TABLE facts ADD COLUMN importance REAL NOT NULL DEFAULT 1.0 CHECK(importance >= 0.5 AND importance <= 1.0)",
+            "ALTER TABLE facts ADD COLUMN last_prompt_at TEXT",
+            "UPDATE facts SET importance = 1.0 WHERE \"key\" IN ('profile.preferred_name', 'profile.birthday')",
+            "UPDATE facts SET importance = 0.7 WHERE \"key\" NOT IN ('profile.preferred_name', 'profile.birthday')",
+        ),
+    ),
+}
+
+
+def _apply_migrations(connection: sqlite3.Connection, from_version: int) -> None:
+    """Upgrade an initialized database in place, one strict step at a time."""
+    version = from_version
+    while version != SCHEMA_VERSION:
+        if version not in MIGRATIONS:
+            raise SchemaVersionError(
+                f"database schema version {version} has no migration path to {SCHEMA_VERSION}"
+            )
+        target, statements = MIGRATIONS[version]
+        for statement in statements:
+            connection.execute(statement)
+        connection.execute(f"PRAGMA user_version = {target}")
+        # app_meta.schema_version mirrors PRAGMA user_version (seeded that way
+        # since v1); keep the mirror exact so _verify_schema passes.
+        connection.execute(
+            "UPDATE app_meta SET value = ? WHERE key = 'schema_version'",
+            (str(target),),
+        )
+        version = target
 
 
 class InstanceAlreadyRunning(RuntimeError):
@@ -377,7 +459,7 @@ def connect_database(path: str | Path, *, require_schema: bool = True) -> sqlite
 
 
 def initialize_database(path: str | Path, clock: Clock | None = None) -> bool:
-    """Create schema v1 and its seed atomically; return False without reseeding if already initialized."""
+    """Create the current schema and its seed, or migrate an older database in place; return False if no writes were needed."""
     database_path = Path(path)
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(database_path, timeout=5.0, isolation_level=None)
@@ -391,9 +473,26 @@ def initialize_database(path: str | Path, clock: Clock | None = None) -> bool:
             _verify_schema(connection)
             return False
         if version != 0:
-            raise SchemaVersionError(
-                f"database schema version {version} is unsupported; expected {SCHEMA_VERSION}"
-            )
+            existing_tables = _table_names(connection)
+            if not existing_tables:
+                raise SchemaVersionError(
+                    f"database schema version {version} is unsupported; expected {SCHEMA_VERSION}"
+                )
+            _set_connection_pragmas(connection)
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                if connection.execute("PRAGMA user_version").fetchone()[0] != version:
+                    raise SchemaVersionError("database version changed while migration was waiting")
+                _apply_migrations(connection, version)
+                _verify_schema(connection)
+                violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise SchemaError("migration left foreign-key violations")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            return True
         existing_tables = _table_names(connection)
         if existing_tables:
             raise SchemaError("unversioned database already contains tables; refusing to overwrite it")
