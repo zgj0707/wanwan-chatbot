@@ -10,7 +10,8 @@ from typing import Iterator
 from uuid import UUID, uuid4
 
 from app.clock import Clock, SystemClock
-from app.db import MUTATION_LOCK, MutationBusy, connect_database, to_utc_iso
+from app.db import MUTATION_LOCK, MutationBusy, SCHEMA_VERSION, connect_database, to_utc_iso
+from app.memory import fact_importance
 from app.models import CallMetric, FactCandidate, PersonaProposal
 from app.memory import (
     MemoryValidationError,
@@ -126,7 +127,7 @@ def seed_initial_data(connection: sqlite3.Connection, *, now: str) -> None:
         )
 
     metadata = {
-        "schema_version": "1",
+        "schema_version": str(SCHEMA_VERSION),
         "world_cursor_at": now,
         "initiative_last_at": "",
         "memory_epoch": "0",
@@ -195,7 +196,36 @@ class Repository:
             if not include_archived:
                 query += " WHERE archived = 0"
             query += " ORDER BY updated_at DESC, id"
-            return [dict(row) for row in connection.execute(query).fetchall()]
+            rows = [dict(row) for row in connection.execute(query).fetchall()]
+            if not rows:
+                return []
+            # 微信式最后一句预览：每个会话取最新一条未红action的未空内容。
+            marks = ",".join("?" for _ in rows)
+            preview_rows = connection.execute(
+                f"""SELECT m.session_id, m.content, m.role, m.created_at
+                    FROM messages m
+                    JOIN (
+                        SELECT session_id, MAX(seq) AS max_seq
+                        FROM messages
+                        WHERE content IS NOT NULL AND redacted = 0
+                        GROUP BY session_id
+                    ) latest ON latest.session_id = m.session_id AND latest.max_seq = m.seq
+                    WHERE m.session_id IN ({marks}) AND m.content IS NOT NULL AND m.redacted = 0""",
+                tuple(r["id"] for r in rows),
+            ).fetchall()
+            previews = {row["session_id"]: row for row in preview_rows}
+            for row in rows:
+                preview = previews.get(row["id"])
+                row["last_message"] = (
+                    {
+                        "content": preview["content"],
+                        "role": preview["role"],
+                        "created_at": preview["created_at"],
+                    }
+                    if preview
+                    else None
+                )
+            return rows
 
     def set_session_archived(self, session_id: str, archived: bool, now: datetime | None = None) -> dict | None:
         _validate_uuid4(session_id, "session_id")
@@ -278,7 +308,7 @@ class Repository:
             memory_unavailable = False
             try:
                 facts = connection.execute(
-                    "SELECT id, namespace, subject_id, \"key\" AS key, value, canonical_hash, status, updated_at FROM facts WHERE status = 'active' ORDER BY updated_at DESC, id"
+                    "SELECT id, namespace, subject_id, \"key\" AS key, value, canonical_hash, status, importance, last_prompt_at, updated_at FROM facts WHERE status = 'active' ORDER BY updated_at DESC, id"
                 ).fetchall()
             except sqlite3.Error:
                 facts = []
@@ -449,6 +479,14 @@ class Repository:
                 "INSERT INTO prompt_refs(assistant_message_id, ref_type, ref_id) VALUES (?, ?, ?)",
                 references,
             )
+            if fact_ids:
+                # Memory decay bookkeeping: facts injected into this turn's
+                # prompt count as "revisited", resetting their recency clock.
+                marks = ",".join("?" for _ in fact_ids)
+                connection.execute(
+                    f"UPDATE facts SET last_prompt_at = ? WHERE id IN ({marks})",
+                    (timestamp, *tuple(fact_ids)),
+                )
             connection.execute(
                 """UPDATE operations SET status = 'succeeded', request_text = NULL,
                    user_message_id = ?, assistant_message_id = ?, error_code = NULL,
@@ -733,9 +771,9 @@ class Repository:
                 connection.execute("UPDATE facts SET status = 'superseded', updated_at = ? WHERE id = ?", (timestamp, active["id"]))
             fact_id = str(uuid4())
             connection.execute(
-                """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, supersedes_id, created_at, updated_at)
-                   VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'manual', ?, ?, ?)""",
-                (fact_id, key, value, fact_hash, supersedes_id, timestamp, timestamp),
+                """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, importance, last_prompt_at, supersedes_id, created_at, updated_at)
+                   VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'manual', ?, NULL, ?, ?, ?)""",
+                (fact_id, key, value, fact_hash, fact_importance(key), supersedes_id, timestamp, timestamp),
             )
             row = connection.execute("SELECT * FROM facts WHERE id = ?", (fact_id,)).fetchone()
             return {**dict(row), "source_message_ids": []}, True
@@ -756,9 +794,9 @@ class Repository:
             connection.execute("UPDATE facts SET status = 'superseded', updated_at = ? WHERE id = ?", (timestamp, fact_id))
             new_id = str(uuid4())
             connection.execute(
-                """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, supersedes_id, created_at, updated_at)
-                   VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'manual', ?, ?, ?)""",
-                (new_id, old["key"], value, fact_hash, fact_id, timestamp, timestamp),
+                """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, importance, last_prompt_at, supersedes_id, created_at, updated_at)
+                   VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'manual', ?, NULL, ?, ?, ?)""",
+                (new_id, old["key"], value, fact_hash, fact_importance(old["key"]), fact_id, timestamp, timestamp),
             )
             row = connection.execute("SELECT * FROM facts WHERE id = ?", (new_id,)).fetchone()
             return {**dict(row), "source_message_ids": []}, True
@@ -894,9 +932,9 @@ class Repository:
                             connection.execute("UPDATE facts SET status = 'superseded', updated_at = ? WHERE id = ?", (timestamp, active["id"]))
                         result_id = str(uuid4())
                         connection.execute(
-                            """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, supersedes_id, created_at, updated_at)
-                               VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'message', ?, ?, ?)""",
-                            (result_id, candidate.key, value, fact_hash, supersedes_id, timestamp, timestamp),
+                            """INSERT INTO facts(id, namespace, subject_id, \"key\", value, canonical_hash, status, origin, importance, last_prompt_at, supersedes_id, created_at, updated_at)
+                               VALUES (?, 'user', 'local-user', ?, ?, ?, 'active', 'message', ?, NULL, ?, ?, ?)""",
+                            (result_id, candidate.key, value, fact_hash, fact_importance(candidate.key), supersedes_id, timestamp, timestamp),
                         )
                     connection.execute(
                         "INSERT OR IGNORE INTO fact_sources(fact_id, message_id) VALUES (?, ?)",
@@ -1057,6 +1095,16 @@ class Repository:
 
             memory_epoch += 1
             connection.execute("UPDATE app_meta SET value = ? WHERE key = 'memory_epoch'", (str(memory_epoch),))
+            if redacted_message_ids:
+                marks = ",".join("?" for _ in redacted_message_ids)
+                # Keep the snapshot text (the CHECK constraint forbids empty
+                # text); the invalidated status alone removes the material
+                # from every saved-material view and blocks further edits.
+                connection.execute(
+                    f"""UPDATE materials SET status = 'invalidated', updated_at = ?
+                        WHERE message_id IN ({marks}) AND status = 'saved'""",
+                    (timestamp, *tuple(redacted_message_ids)),
+                )
             return {
                 "forgotten_fact_ids": sorted(forgotten_ids),
                 "redacted_message_count": changed_message_count,
@@ -1428,3 +1476,128 @@ class Repository:
                 (timestamp,),
             )
             return cursor.rowcount
+
+    _MATERIAL_PILLARS = frozenset(
+        {"work_diary", "photo_aesthetics", "night_emotion", "cat_ai_girl", "uncategorized"}
+    )
+    _MATERIAL_HOOKS = frozenset(
+        {"contrast", "specific_number", "suspense_question", "identity_resonance", "cat_hook", "scene_hook", "none"}
+    )
+
+    def save_material(
+        self,
+        *,
+        message_id: str,
+        pillar: str,
+        hook_type: str = "none",
+        note: str | None = None,
+        now: datetime | None = None,
+    ) -> dict:
+        _validate_uuid4(message_id, "message_id")
+        if pillar not in self._MATERIAL_PILLARS:
+            raise ValueError("invalid material pillar")
+        if hook_type not in self._MATERIAL_HOOKS:
+            raise ValueError("invalid material hook type")
+        if note is not None and (not isinstance(note, str) or len(note) > 200):
+            raise ValueError("material note must be empty or at most 200 characters")
+        timestamp = to_utc_iso(now or self.clock.now())
+        material_id = str(uuid4())
+        with self.transaction() as connection:
+            message = connection.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+            if message is None:
+                raise LookupError("message not found")
+            if message["redacted"] or message["content"] is None or not message["content"].strip():
+                raise PermissionError("message content is unavailable")
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO materials(
+                        id, message_id, role, session_id, snapshot_text,
+                        pillar, hook_type, note, status, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'saved', ?, ?)
+                    """,
+                    (
+                        material_id,
+                        message_id,
+                        message["role"],
+                        message["session_id"],
+                        message["content"],
+                        pillar,
+                        hook_type,
+                        note,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("message is already saved as a material") from exc
+            row = connection.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+            assert row is not None
+            return dict(row)
+
+    def list_materials(self, *, status: str = "saved", pillar: str | None = None, limit: int = 200) -> list[dict]:
+        if status not in {"saved", "discarded", "invalidated"}:
+            raise ValueError("invalid material status filter")
+        if pillar is not None and pillar not in self._MATERIAL_PILLARS:
+            raise ValueError("invalid material pillar filter")
+        with self.connection() as connection:
+            sql = "SELECT * FROM materials WHERE status = ?"
+            params: list[object] = [status]
+            if pillar is not None:
+                sql += " AND pillar = ?"
+                params.append(pillar)
+            sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+            params.append(max(0, int(limit)))
+            rows = connection.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_material(
+        self,
+        material_id: str,
+        *,
+        pillar: str | None = None,
+        hook_type: str | None = None,
+        note: str | None = None,
+        status: str | None = None,
+        now: datetime | None = None,
+    ) -> dict:
+        _validate_uuid4(material_id, "material_id")
+        if pillar is not None and pillar not in self._MATERIAL_PILLARS:
+            raise ValueError("invalid material pillar")
+        if hook_type is not None and hook_type not in self._MATERIAL_HOOKS:
+            raise ValueError("invalid material hook type")
+        if note is not None and (not isinstance(note, str) or len(note) > 200):
+            raise ValueError("material note must be empty or at most 200 characters")
+        if status is not None and status not in {"saved", "discarded"}:
+            raise ValueError("invalid material status")
+        timestamp = to_utc_iso(now or self.clock.now())
+        with self.transaction() as connection:
+            row = connection.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+            if row is None:
+                raise LookupError("material not found")
+            if row["status"] == "invalidated":
+                raise PermissionError("invalidated material cannot be edited")
+            updates: list[str] = []
+            params: list[object] = []
+            if pillar is not None:
+                updates.append("pillar = ?")
+                params.append(pillar)
+            if hook_type is not None:
+                updates.append("hook_type = ?")
+                params.append(hook_type)
+            if note is not None:
+                updates.append("note = ?")
+                params.append(note)
+            if status is not None:
+                updates.append("status = ?")
+                params.append(status)
+            if not updates:
+                return dict(row)
+            updates.append("updated_at = ?")
+            params.append(timestamp)
+            params.append(material_id)
+            connection.execute(f"UPDATE materials SET {', '.join(updates)} WHERE id = ?", tuple(params))
+            updated = connection.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+            assert updated is not None
+            return dict(updated)

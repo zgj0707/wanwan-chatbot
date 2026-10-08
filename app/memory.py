@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from datetime import datetime, timezone
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +23,23 @@ FACT_KEYS: tuple[str, ...] = (
     "preference.chat_style",
     "plan.personal",
 )
+
+# Identity facts are part of how 苏晚 addresses the user and never fade;
+# ordinary preferences slowly lose recall weight when not revisited
+# (MemoryBank-style time × importance decay, gentle: floor is 0.5).
+_FACT_IMPORTANCE: dict[str, float] = {
+    "profile.preferred_name": 1.0,
+    "profile.birthday": 1.0,
+    "preference.drink": 0.7,
+    "preference.food": 0.7,
+    "preference.hobby": 0.7,
+    "preference.chat_style": 0.8,
+    "plan.personal": 0.9,
+}
+
+
+def fact_importance(key: str) -> float:
+    return _FACT_IMPORTANCE.get(key, 0.7)
 
 _SENSITIVE_PATTERNS = (
     re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE),
@@ -140,6 +157,8 @@ def retrieve_facts(
     query: str,
     facts: Sequence[Mapping[str, Any]],
     top_k: int = 5,
+    *,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     if not isinstance(query, str):
         raise MemoryDataUnavailable("memory query is invalid")
@@ -173,15 +192,45 @@ def retrieve_facts(
             timestamp = parse_db_datetime(updated)
             fact_grams = character_bigrams(value)
             intersection = len(query_grams & fact_grams)
-            score = (2.0 * intersection / (len(query_grams) + len(fact_grams))) if query_grams and fact_grams else 0.0
-            validated.append({**dict(fact), "key": key, "value": value, "updated_at": timestamp, "score": score})
+            similarity = (2.0 * intersection / (len(query_grams) + len(fact_grams))) if query_grams and fact_grams else 0.0
+            importance = fact.get("importance")
+            if importance is None:
+                # Rows from older writers may not carry the column; derive the
+                # canonical default for the key instead of failing the whole index.
+                importance = fact_importance(key)
+            if not isinstance(importance, (int, float)) or not 0.5 <= float(importance) <= 1.0:
+                raise ValueError("fact importance is invalid")
+            last_prompt = fact.get("last_prompt_at")
+            last_prompt_time = (
+                parse_db_datetime(last_prompt)
+                if isinstance(last_prompt, str) and last_prompt
+                else None
+            )
+            validated.append(
+                {
+                    **dict(fact),
+                    "key": key,
+                    "value": value,
+                    "updated_at": timestamp,
+                    "score": similarity,
+                    "importance": float(importance),
+                    "last_prompt_time": last_prompt_time,
+                }
+            )
     except (AttributeError, KeyError, TypeError, ValueError, ValidationError) as exc:
         raise MemoryDataUnavailable("active memory rows are invalid") from exc
 
+    for fact in validated:
+        # Gentle recency decay on top of importance: an ordinary preference
+        # untouched for weeks ranks below a fresh one with the same similarity,
+        # but nothing is ever deleted or hidden outright.
+        fact["decay_weight"] = fact["importance"] * _recency_factor(
+            fact["last_prompt_time"], fact["updated_at"], now
+        )
     matches = [fact for fact in validated if fact["score"] > 0]
     matches.sort(key=lambda fact: fact["id"])
     matches.sort(key=lambda fact: fact["updated_at"], reverse=True)
-    matches.sort(key=lambda fact: fact["score"], reverse=True)
+    matches.sort(key=lambda fact: (fact["score"] * fact["decay_weight"]), reverse=True)
     selected = matches[:top_k]
     preferred = next((fact for fact in validated if fact["key"] == "profile.preferred_name"), None)
     if preferred is not None and all(fact["id"] != preferred["id"] for fact in selected):
@@ -190,3 +239,25 @@ def retrieve_facts(
         else:
             selected.append(preferred)
     return [{**fact, "updated_at": fact["updated_at"].isoformat()} for fact in selected]
+
+
+_DECAY_HALF_LIFE_DAYS = 14.0
+_DECAY_FLOOR = 0.6
+
+
+def _recency_factor(
+    last_prompt_time: datetime | None,
+    updated_at: datetime,
+    now: datetime | None = None,
+) -> float:
+    """Exponential recency decay with a floor: 1.0 when recently used, sliding
+    toward the floor over a two-week half-life. Falls back to updated_at when
+    the fact has never been injected into a prompt."""
+    reference = last_prompt_time or updated_at
+    if now is None:
+        now = datetime.now(timezone.utc)
+    reference_utc = reference if reference.tzinfo is not None else reference.replace(tzinfo=timezone.utc)
+    now_utc = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    elapsed_days = max(0.0, (now_utc - reference_utc).total_seconds() / 86400.0)
+    factor = 0.5 ** (elapsed_days / _DECAY_HALF_LIFE_DAYS)
+    return max(_DECAY_FLOOR, factor)

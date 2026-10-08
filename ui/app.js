@@ -22,7 +22,9 @@
     newSession: document.getElementById("new-session"),
     title: document.getElementById("session-title"),
     time: document.getElementById("time-context"),
+    herSignature: document.getElementById("her-signature"),
     mode: document.getElementById("mode-badge"),
+    moodBadges: document.getElementById("mood-badges"),
     uiVersion: document.getElementById("ui-version"),
     archive: document.getElementById("archive-current"),
     openSettings: document.getElementById("open-settings"),
@@ -45,6 +47,25 @@
     managerNotice: document.getElementById("manager-notice"),
     personaNotice: document.getElementById("persona-notice"),
     diagnosticsNotice: document.getElementById("diagnostics-notice"),
+    materialsList: document.getElementById("materials-list"),
+    materialsCount: document.getElementById("materials-count"),
+    materialsFilter: document.getElementById("materials-filter"),
+    apiTemplates: document.getElementById("api-templates"),
+    apiBaseUrl: document.getElementById("api-base-url"),
+    apiModel: document.getElementById("api-model"),
+    apiKeyInput: document.getElementById("api-key-input"),
+    apiKeyStatus: document.getElementById("api-key-status"),
+    apiHint: document.getElementById("api-hint"),
+    saveApiSettings: document.getElementById("save-api-settings"),
+    weatherCity: document.getElementById("weather-city"),
+    weatherLat: document.getElementById("weather-lat"),
+    weatherLon: document.getElementById("weather-lon"),
+    weatherFields: document.getElementById("weather-fields"),
+    weatherStatus: document.getElementById("weather-status"),
+    saveWeatherSettings: document.getElementById("save-weather-settings"),
+    ccswitchList: document.getElementById("ccswitch-list"),
+    ccswitchCount: document.getElementById("ccswitch-count"),
+    ccswitchSection: document.getElementById("ccswitch-section"),
     worldNotice: document.getElementById("world-notice"),
     worldLastUpdate: document.getElementById("world-last-update"),
     worldThreads: document.getElementById("world-threads"),
@@ -69,9 +90,10 @@
     diagnosticsSummary: document.getElementById("diagnostics-summary"),
     diagnosticsCalls: document.getElementById("diagnostics-calls"),
     diagnosticsRefresh: document.getElementById("refresh-diagnostics"),
-    probeForm: document.getElementById("probe-form"),
-    probeProfile: document.getElementById("probe-profile"),
-    probeResult: document.getElementById("probe-result"),
+    apiTestResult: document.getElementById("api-test-result"),
+    switchChatModel: document.getElementById("switch-chat-model"),
+    apiModelAnalysis: document.getElementById("api-model-analysis"),
+    apiModelWorld: document.getElementById("api-model-world"),
     backupExport: document.getElementById("export-backup"),
     backupNotice: document.getElementById("backup-notice"),
     forgetDialog: document.getElementById("forget-dialog"),
@@ -92,7 +114,12 @@
   let isComposing = false;
   let currentView = "chat-view";
   let forgetFactId = null;
+  let moodState = null;
   let initiativeGeneration = 0;
+  /* 爪印/猫用内联 SVG（CSP 合规：不引外部资源）*/
+  const PAW_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><ellipse cx="12" cy="15.8" rx="4.8" ry="3.8"/><circle cx="6.8" cy="10.6" r="1.9"/><circle cx="10.4" cy="7.2" r="1.9"/><circle cx="14.6" cy="7.4" r="1.9"/><circle cx="17.6" cy="11.2" r="1.9"/></svg>';
+  const CAT_PEEK_SVG = '<svg class="cat-peek" viewBox="0 0 24 24" fill="none" stroke="#8a5138" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="30" height="30"><path d="M4.5 9.5 6 4.5l3.2 2.6a6.6 6.6 0 0 1 5.6 0L18 4.5l1.5 5"/><ellipse cx="12" cy="13.5" rx="6.5" ry="5.5"/><circle cx="9.6" cy="13" r=".4" fill="#8a5138"/><circle cx="14.4" cy="13" r=".4" fill="#8a5138"/></svg>';
+  const CAT_WALK_SVG = '<svg viewBox="0 0 64 40" fill="#3d332b" width="68" height="42"><path d="M8 34c-2-6 0-13 5-16l-2-7 6 4a14 14 0 0 1 10 0l6-4-2 7c4 3 6 9 5 14l6 2c1 .4 1 2-.5 2H38c-1 2-3 3-5 3H12c-2 0-3.4-2-4-5z"/></svg>';
   const initiativePendingSessions = new Set();
   let worldBusy = false;
   let nextBeforeId = null;
@@ -126,6 +153,13 @@
     const node = document.createElement(tag);
     if (className) node.className = className;
     if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+  /* 静态 SVG 装饰：仓库内常量经 DOMParser 解析为 DOM（渲染路径不拼 HTML 字符串）*/
+  function makeSvg(markup, className) {
+    const doc = new DOMParser().parseFromString(markup.trim(), "image/svg+xml");
+    const node = document.importNode(doc.documentElement, true);
+    if (className) node.setAttribute("class", className);
     return node;
   }
   function updateClock() {
@@ -290,7 +324,8 @@
     for (const view of els.views) view.classList.toggle("hidden", view.id !== viewId);
     if (viewId === "memory-view") void loadMemoryView();
     if (viewId === "persona-view") void loadPersonaView();
-    if (viewId === "diagnostics-view") void loadDiagnosticsView();
+    if (viewId === "materials-view") void loadMaterialsView();
+    if (viewId === "diagnostics-view") { void loadDiagnosticsView(); void loadApiSettingsView(); void loadCcswitchProviders(); }
   }
   function openSettings(viewId) {
     els.settingsOverlay.classList.remove("hidden");
@@ -299,6 +334,160 @@
   function closeSettings() {
     els.settingsOverlay.classList.add("hidden");
     currentView = "chat-view";
+  }
+
+  /* ── 素材库（顺手收藏）────────────────────── */
+  const MATERIAL_PILLARS = {
+    work_diary: "打工人纪实",
+    photo_aesthetics: "随手拍美学",
+    night_emotion: "情绪夜话",
+    cat_ai_girl: "猫与AI女孩",
+    uncategorized: "未分类",
+  };
+  const MATERIAL_HOOKS = {
+    contrast: "反差",
+    specific_number: "具体数字",
+    suspense_question: "悬念提问",
+    identity_resonance: "身份共鸣",
+    cat_hook: "猫钩子",
+    scene_hook: "场景钩",
+    none: "未标注",
+  };
+  const PILLAR_ORDER = ["work_diary", "photo_aesthetics", "night_emotion", "cat_ai_girl"];
+
+  function openMaterialPicker(message, anchorButton) {
+    const existing = document.getElementById("message-material-picker");
+    if (existing) existing.remove();
+    const picker = make("div", "material-picker");
+    picker.id = "message-material-picker";
+    picker.setAttribute("role", "dialog");
+    picker.setAttribute("aria-label", "收藏为素材");
+    picker.append(make("p", "material-picker-title", "收藏这条消息为素材"));
+    const pillarRow = make("div", "material-picker-row");
+    for (const key of PILLAR_ORDER) {
+      const option = make("button", "material-pill");
+      option.type = "button";
+      option.textContent = MATERIAL_PILLARS[key];
+      option.addEventListener("click", () => submitMaterial(message, key, picker));
+      pillarRow.append(option);
+    }
+    picker.append(pillarRow);
+    picker.append(make("p", "material-picker-hint", "先选内容支柱，之后可在素材库中补钩子类型和备注。"));
+
+    // message-actions 是 absolute+悬浮显示的行，选择器不能插在里面；
+    // 插到 message-body 末尾（文档流内），气泡下方完整宽度展开。
+    const messageBody = anchorButton.closest(".message-body") || anchorButton.parentElement;
+    messageBody.append(picker);
+    const dismiss = (event) => {
+      if (picker.contains(event.target) || event.target === anchorButton) return;
+      picker.remove();
+      document.removeEventListener("click", dismiss);
+    };
+    setTimeout(() => document.addEventListener("click", dismiss), 0);
+  }
+
+  async function submitMaterial(message, pillar, picker) {
+    const saveButtons = document.querySelectorAll(".material-save-button");
+    for (const button of saveButtons) button.disabled = true;
+    try {
+      const response = await fetch("/api/v1/materials", {
+        method: "POST",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ message_id: message.id, pillar, hook_type: "none", note: null }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const codes = {
+          MATERIAL_DUPLICATE: "这条消息已经收藏过素材了。",
+          SOURCE_REDACTED: "来源内容已被移除，无法收藏。",
+          APP_BUSY: "当前有操作尚未结束，稍后再试。",
+        };
+        throw new Error(payload?.error?.message || codes[payload?.error?.code] || "收藏失败，请稍后再试。");
+      }
+      picker.remove();
+      toastSuccess(`已收藏到「${MATERIAL_PILLARS[pillar]}」。可在设置中心的素材库查看。`);
+    } catch (error) {
+      toastError(error.message || "收藏失败，请稍后再试。");
+    } finally {
+      for (const button of saveButtons) button.disabled = false;
+    }
+  }
+
+  async function loadMaterialsView(pillar = null) {
+    if (!els.materialsList) return;
+    try {
+      const query = pillar ? `?limit=500&pillar=${encodeURIComponent(pillar)}` : "?limit=500";
+      const response = await fetch(`/api/v1/materials${query}`, { headers: headers() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error?.message || "load failed");
+      els.materialsList.replaceChildren();
+      const items = payload.items || [];
+      els.materialsCount.textContent = String(items.length);
+      if (!items.length) {
+        els.materialsList.append(make("p", "manager-empty", "素材库还是空的。在聊天中点消息下方的「收藏素材」，选择内容支柱即可。"));
+        return;
+      }
+      for (const item of items) els.materialsList.append(renderMaterialCard(item));
+    } catch {
+      setViewNotice("materials-view", "素材库暂时无法加载，请稍后重试。", true);
+    }
+  }
+
+  function renderMaterialCard(item) {
+    const card = make("div", "panel-card material-card");
+    const head = make("div", "material-card-head");
+    const badges = make("div", "material-card-badges");
+    badges.append(make("span", "material-pill static", MATERIAL_PILLARS[item.pillar] || item.pillar));
+    if (item.hook_type && item.hook_type !== "none") {
+      badges.append(make("span", "material-pill static hook", MATERIAL_HOOKS[item.hook_type] || item.hook_type));
+    }
+    if (item.note) badges.append(make("span", "material-pill static note", item.note));
+    head.append(badges);
+    head.append(make("time", "material-card-time", messageTimeLabel(item.created_at)));
+    card.append(head);
+    card.append(make("p", "material-card-text", item.snapshot_text));
+    card.append(make("p", "material-card-meta label", `来源：${item.role === "user" ? "我" : "晚晚"} · ${messageTimeLabel(item.created_at)}`));
+
+    const toolbar = make("div", "material-card-actions");
+    for (const [hookKey, hookLabel] of Object.entries(MATERIAL_HOOKS)) {
+      if (hookKey === "none" || item.hook_type === hookKey) continue;
+      const hookButton = make("button", "text-button", `钩子：${hookLabel}`);
+      hookButton.type = "button";
+      hookButton.addEventListener("click", async () => {
+        try {
+          const response = await fetch(`/api/v1/materials/${item.id}/update`, {
+            method: "POST",
+            headers: headers({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ hook_type: hookKey }),
+          });
+          if (!response.ok) throw new Error("update failed");
+          void loadMaterialsView();
+        } catch {
+          toastError("更新钩子类型失败。");
+        }
+      });
+      toolbar.append(hookButton);
+    }
+    const discardButton = make("button", "text-button material-discard", "移出素材库");
+    discardButton.type = "button";
+    discardButton.addEventListener("click", async () => {
+      discardButton.disabled = true;
+      try {
+        const response = await fetch(`/api/v1/materials/${item.id}/update`, {
+          method: "POST",
+          headers: headers({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ status: "discarded" }),
+        });
+        if (!response.ok) throw new Error("discard failed");
+        void loadMaterialsView();
+      } catch {
+        discardButton.disabled = false;
+        toastError("移出素材库失败。");
+      }
+    });
+    toolbar.append(discardButton);
+    card.append(toolbar);
+    return card;
   }
 
   /* ── 记忆管理 ─────────────────────────────── */
@@ -483,6 +672,173 @@
   }
 
   /* ── 设置与诊断 ───────────────────────────── */
+  /* ── 设置中心：模型 API 与天气配置 ────────── */
+  let apiTemplates = {};
+  async function loadApiSettingsView() {
+    if (!els.apiTemplates) return;
+    try {
+      const { data } = await request("/settings/api");
+      apiTemplates = data.templates || {};
+      renderApiTemplates();
+      if (data.chat) {
+        els.apiBaseUrl.value = data.chat.base_url || "";
+        els.apiModel.value = data.chat.model || "";
+        if (els.apiModelAnalysis) els.apiModelAnalysis.value = data.analysis?.model || "";
+        if (els.apiModelWorld) els.apiModelWorld.value = data.world?.model || "";
+        els.apiKeyInput.placeholder = data.chat.api_key_set ? "已配置（留空保持不变）" : "••••••••";
+        els.apiKeyStatus.textContent = data.chat.api_key_set ? "已配置" : "未配置";
+        els.apiKeyStatus.classList.toggle("zero", !data.chat.api_key_set);
+      } else {
+        els.apiKeyStatus.textContent = data.config_file_exists ? "待填写" : "需先运行 setup.bat";
+        els.apiKeyStatus.classList.add("zero");
+      }
+      const weather = data.weather || {};
+      const providerInput = document.querySelector('input[name="weather-provider"][value="' + (weather.provider || "off") + '"]');
+      if (providerInput) providerInput.checked = true;
+      if (weather.provider === "open_meteo") {
+        els.weatherCity.value = weather.city || "";
+        els.weatherLat.value = weather.latitude ?? "";
+        els.weatherLon.value = weather.longitude ?? "";
+      }
+      syncWeatherFields();
+    } catch {
+      setViewNotice("diagnostics-view", "无法加载 API 设置，请稍后重试。", true);
+    }
+  }
+  function renderApiTemplates() {
+    if (!els.apiTemplates) return;
+    els.apiTemplates.replaceChildren();
+    for (const [key, tpl] of Object.entries(apiTemplates)) {
+      const chip = make("button", "template-chip");
+      chip.type = "button";
+      chip.setAttribute("role", "radio");
+      chip.setAttribute("aria-checked", "false");
+      chip.textContent = tpl.label;
+      chip.addEventListener("click", () => {
+        for (const sibling of els.apiTemplates.children) {
+          sibling.setAttribute("aria-checked", sibling === chip ? "true" : "false");
+        }
+        if (tpl.base_url) els.apiBaseUrl.value = tpl.base_url;
+        els.apiModel.value = tpl.model || "";
+        els.apiHint.textContent = tpl.hint || "";
+        els.apiKeyInput.focus();
+      });
+      els.apiTemplates.append(chip);
+    }
+  }
+  function syncWeatherFields() {
+    const checked = document.querySelector('input[name="weather-provider"]:checked');
+    const enabled = checked && checked.value === "open_meteo";
+    els.weatherFields.classList.toggle("hidden", !enabled);
+    els.weatherStatus.textContent = enabled ? "待保存" : "关闭";
+    els.weatherStatus.classList.toggle("zero", !enabled);
+  }
+  async function saveApiSettings() {
+    setBusy(els.saveApiSettings, true, "保存中");
+    try {
+      const { data } = await request("/settings/api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base_url: els.apiBaseUrl.value.trim(),
+          model: els.apiModel.value.trim(),
+          api_key: els.apiKeyInput.value.trim() || null,
+        }),
+      });
+      els.apiKeyInput.value = "";
+      els.apiKeyInput.placeholder = data.api_key_set ? "已配置（留空保持不变）" : "••••••••";
+      els.apiKeyStatus.textContent = data.api_key_set ? "已配置" : "未配置";
+      els.apiKeyStatus.classList.toggle("zero", !data.api_key_set);
+      setViewNotice("diagnostics-view", data.notice || "已保存。重启应用后生效。");
+      toastSuccess("模型设置已保存到本机文件。重启应用后生效。", { duration: 5000 });
+    } catch (error) {
+      toastError(error.message || "保存失败。");
+    } finally { setBusy(els.saveApiSettings, false); }
+  }
+  async function saveWeatherSettings() {
+    setBusy(els.saveWeatherSettings, true, "保存中");
+    try {
+      const providerInput = document.querySelector('input[name="weather-provider"]:checked');
+      /* 经纬度容错：全角数字/中文标点/空格先归一化；NaN 直接在前端提示，不发请求 */
+      const parseCoord = (raw, label) => {
+        const text = String(raw ?? "").trim();
+        if (!text) return null;
+        const normalized = text
+          .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+          .replace(/[。，．]/g, ".")
+          .replace(/[°°]/g, "");
+        const value = Number.parseFloat(normalized);
+        if (!Number.isFinite(value)) {
+          throw new Error(`${label}格式无效：请填数字（例：23.13）。`);
+        }
+        return value;
+      };
+      const payload = {
+        provider: providerInput ? providerInput.value : "off",
+        city: els.weatherCity.value.trim(),
+        latitude: parseCoord(els.weatherLat.value, "纬度"),
+        longitude: parseCoord(els.weatherLon.value, "经度"),
+      };
+      const { data } = await request("/settings/weather", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      els.weatherStatus.textContent = data.weather.provider === "open_meteo" ? "已保存" : "关闭";
+      setViewNotice("diagnostics-view", "天气设置已保存到本机 config.yaml。重启应用后生效。");
+      toastSuccess("天气设置已保存。重启应用后生效。", { duration: 5000 });
+    } catch (error) {
+      toastError(error.message || "保存失败。");
+    } finally { setBusy(els.saveWeatherSettings, false); }
+  }
+
+  /* ── cc-switch 导入 ── */
+  let ccswitchItems = [];
+  async function loadCcswitchProviders() {
+    if (!els.ccswitchList) return;
+    try {
+      const { data } = await request("/settings/ccswitch");
+      ccswitchItems = data.items || [];
+      els.ccswitchCount.textContent = String(ccswitchItems.length);
+      els.ccswitchSection.classList.toggle("hidden", !ccswitchItems.length && false);
+      if (!ccswitchItems.length) {
+        els.ccswitchList.replaceChildren(make("p", "api-note faint", "未检测到本机 cc-switch 的第三方配置。"));
+        return;
+      }
+      els.ccswitchList.replaceChildren();
+      for (const item of ccswitchItems) {
+        const row = make("div", "ccswitch-item");
+        const info = make("div");
+        info.style.flex = "1";
+        info.append(make("div", "name", item.name));
+        info.append(make("div", "meta", `${item.base_url} · 令牌 ${item.token_length} 位`));
+        row.append(info);
+        const importButton = make("button", "text-button", "导入");
+        importButton.type = "button";
+        importButton.addEventListener("click", async () => {
+          importButton.disabled = true;
+          try {
+            const { data: result } = await request(`/settings/ccswitch/${encodeURIComponent(item.id)}/import`, { method: "POST" });
+            const models = result.available_models || [];
+            els.apiBaseUrl.value = result.base_url;
+            els.apiModel.value = result.model;
+            els.apiKeyStatus.textContent = "已配置";
+            els.apiKeyStatus.classList.remove("zero");
+            els.apiHint.textContent = models.length
+              ? `已导入。该网关有 ${models.length} 个模型可用（如 ${models.slice(0, 3).join("、")}），改模型名即可切换。`
+              : "已导入。网关未开放模型列表，手动填模型名。";
+            toastSuccess("已从 cc-switch 导入。重启应用后生效。", { duration: 5000 });
+          } catch (error) {
+            importButton.disabled = false;
+            toastError(error.message || "导入失败。");
+          }
+        });
+        row.append(importButton);
+        els.ccswitchList.append(row);
+      }
+    } catch {
+      els.ccswitchList.replaceChildren(make("p", "api-note faint", "无法读取 cc-switch（可能未安装）。"));
+    }
+  }
+
   async function loadDiagnosticsView() {
     setViewNotice("diagnostics-view", "正在检查本地状态…");
     try {
@@ -719,6 +1075,69 @@
     }
   }
 
+  /* ── 氛围徽章 ─────────────────────────────── */
+  const MOOD_BADGES = {
+    calm: "平静",
+    happy: "开心",
+    tired: "有点累",
+    sad: "低落",
+    cold: "有点距离感",
+  };
+  async function refreshMoodBadges() {
+    if (!els.moodBadges) return;
+    try {
+      const { data } = await request("/state");
+      renderMoodBadges(data);
+    } catch {
+      renderMoodBadges(null);
+    }
+  }
+  function renderMoodBadges(state) {
+    if (!els.moodBadges) return;
+    const chips = [];
+    moodState = state || null;
+    if (state) {
+      // 全界面情绪渗透：body 属性是所有 life.css 规则的开关
+      document.body.dataset.mood = state.mood || "calm";
+      document.body.dataset.late = state.late_night ? "1" : "0";
+      document.body.dataset.guard = state.guard ? "1" : "0";
+    }
+    if (state && MOOD_BADGES[state.mood]) chips.push(make("span", `mood-badge mood-${state.mood}`, MOOD_BADGES[state.mood]));
+    if (state?.late_night) chips.push(make("span", "mood-badge late-night", "深夜"));
+    if (state?.guard) chips.push(make("span", "mood-badge guard", "需要一点空间"));
+    els.moodBadges.replaceChildren(...chips);
+    els.moodBadges.classList.toggle("hidden", !chips.length);
+    renderHerSignature();
+  }
+
+  /* 情绪渗透：她的签名档 + placeholder + 打字语料，全部随 mood 轮换 */
+  const HER_SIGNATURE = {
+    calm: "在等一个话题",
+    happy: "今天嘴角压不住",
+    tired: "电量剩 3%",
+    sad: "…想安静会儿",
+    cold: "（不想说话）",
+  };
+  const PLACEHOLDER_POOLS = {
+    normal: ["说点什么吧…（Enter 发送，Shift+Enter 换行）"],
+    tired: ["她有点累，说话轻一点（Enter 发送）"],
+    sad: ["嗯……慢慢说（Enter 发送）"],
+    cold: ["她现在不太想说话，或者随便说点别的？（Enter 发送）"],
+    guard: ["慢慢来，她还在缓（Enter 发送）"],
+  };
+  const TYPING_PHRASES = {
+    normal: ["正在想怎么回你", "嗯…让我想想", "年糕踩过键盘了稍等"],
+    tired: ["让我缓缓再回你……", "在想，有点慢", "今天好累，容我想想"],
+    guard: ["她还在缓，别急"],
+  };
+  function renderHerSignature() {
+    if (!els.herSignature) return;
+    const mood = moodState?.mood || "calm";
+    els.herSignature.textContent = HER_SIGNATURE[mood] || HER_SIGNATURE.calm;
+    let pool = moodState?.guard ? PLACEHOLDER_POOLS.guard : (PLACEHOLDER_POOLS[mood] || PLACEHOLDER_POOLS.normal);
+    els.input.placeholder = pool[0];
+  }
+
   /* ── 忘记记忆 ─────────────────────────────── */
   function openForgetDialog(factId) {
     forgetFactId = factId;
@@ -750,6 +1169,19 @@
     const date = new Date(value || "");
     if (Number.isNaN(date.getTime())) return null;
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  }
+  /* 微信式相对时间：今天/昨天/周几/M-D */
+  function relativeDay(value) {
+    const stamp = Date.parse(value || "");
+    if (Number.isNaN(stamp)) return "";
+    const dayKey = sessionDayKey(new Date(stamp));
+    const todayKey = sessionDayKey(new Date());
+    const yesterdayKey = sessionDayKey(new Date(Date.now() - 86400000));
+    if (dayKey === todayKey) return messageTimeLabel(value);
+    if (dayKey === yesterdayKey) return "昨天";
+    const diffDays = (Date.now() - stamp) / 86400000;
+    if (diffDays < 7) return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", weekday: "short" }).format(new Date(stamp));
+    return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" }).format(new Date(stamp));
   }
   function sessionGroupIndex(session) {
     const stamp = Date.parse(session.updated_at || session.created_at || "");
@@ -790,9 +1222,15 @@
         const active = session.id === activeSessionId;
         const open = make("button", `session-open${active ? " active" : ""}${session.archived ? " archived" : ""}`);
         open.type = "button";
+        const titleRow = make("span", "session-title-row");
+        titleRow.append(make("span", "session-title", session.title || "未命名对话" + (session.archived ? " · 已归档" : "")));
+        titleRow.append(make("span", "session-time", relativeDay(session.updated_at)));
+        open.append(titleRow);
+        const previewText = session.last_message?.content
+          ? (session.last_message.role === "user" ? "我：" : "") + session.last_message.content
+          : "";
+        if (previewText) open.append(make("span", "session-preview", previewText));
         if (!active && session.id === pending?.session_id) open.append(make("span", "session-dot"));
-        open.append(document.createTextNode(session.title || "未命名对话"));
-        if (session.archived) open.append(document.createTextNode(" · 已归档"));
         open.title = `${session.title || "未命名对话"}${session.updated_at ? ` · ${new Date(session.updated_at).toLocaleString("zh-CN")}` : ""}`;
         open.setAttribute("aria-current", active ? "true" : "false");
         open.addEventListener("click", () => {
@@ -1010,7 +1448,14 @@
   function appendMessage(message, prepend = false) {
     const user = message.role === "user";
     const row = make("div", `message-row ${user ? "user" : "assistant"}`);
-    if (!user) row.append(make("span", "avatar", "晚"));
+    if (!user) {
+      const avatarNode = make("span", "avatar life", "");
+      const img = document.createElement("img");
+      img.src = "/ui/assets/avatar.png";
+      img.alt = "";
+      avatarNode.append(img);
+      row.append(avatarNode);
+    }
     const body = make("div", "message-body");
     const authorRow = make("div", "message-author-row");
     if (!user) authorRow.append(make("span", "message-author", "苏晚晚"));
@@ -1021,6 +1466,9 @@
     body.append(authorRow);
     const bubble = make("div", `bubble${message.redacted ? " redacted" : ""}`, message.redacted ? "此条内容已因忘记操作移除" : (message.content || ""));
     body.append(bubble);
+    if (!user && !message.redacted && /年糕|猫/.test(message.content || "")) {
+      bubble.append(makeSvg(CAT_PEEK_SVG, "cat-peek"));
+    }
     if (!message.redacted && message.content) {
       const actions = make("div", "message-actions");
       const copyButton = make("button", "copy-button", "复制");
@@ -1040,10 +1488,15 @@
         }
       });
       actions.append(copyButton);
+      const saveButton = make("button", "copy-button material-save-button", "收藏素材");
+      saveButton.type = "button";
+      saveButton.title = "把这条消息收藏进素材库";
+      saveButton.addEventListener("click", () => openMaterialPicker(message, saveButton));
+      actions.append(saveButton);
       body.append(actions);
     }
-    row.append(body);
     if (user) row.append(make("span", "avatar user-avatar", "我"));
+    row.append(body);
     if (prepend && els.messages.firstElementChild) els.messages.insertBefore(row, els.messages.firstElementChild);
     else els.messages.append(row);
     if (!prepend) {
@@ -1086,16 +1539,20 @@
       els.pending.append(card);
     } else {
       const waiting = make("div", "message-row assistant waiting-message");
-      waiting.append(make("span", "avatar", "晚"));
+      waiting.append(make("span", "avatar life", ""));
+      waiting.querySelector(".avatar.life").append(Object.assign(document.createElement("img"), { src: "/ui/assets/avatar.png", alt: "" }));
       const waitingBody = make("div", "message-body");
       const waitingAuthor = make("div", "message-author-row");
       waitingAuthor.append(make("span", "message-author", "苏晚晚"));
       const elapsed = make("span", "message-time", "");
       waitingAuthor.append(elapsed);
       waitingBody.append(waitingAuthor);
-      const bubble = make("div", "bubble");
-      bubble.append(make("span", "typing-label", "正在想怎么回你"));
-      appendTypingDots(bubble);
+      const bubble = make("div", "bubble typing-bubble");
+      const pool = moodState?.guard
+        ? TYPING_PHRASES.guard
+        : (moodState && (moodState.mood === "tired" || moodState.mood === "sad") ? TYPING_PHRASES.tired : TYPING_PHRASES.normal);
+      for (let pawIndex = 0; pawIndex < 3; pawIndex += 1) bubble.append(make("span", "paw"));
+      bubble.append(make("span", "typing-label", pool[Math.floor(Math.random() * pool.length)]));
       waitingBody.append(bubble);
       waiting.append(waitingBody);
       els.pending.append(waiting);
@@ -1185,6 +1642,7 @@
     if (completedSession === activeSessionId) await loadMessages();
     await loadSessionsListOnly();
     renderPending();
+    void refreshMoodBadges();
     if (data.warnings?.length) toastWarn(`本轮完成，但有状态提示：${data.warnings.join("、")}`, { duration: 6000 });
   }
   async function checkOperation(showNoticeOnError) {
@@ -1380,6 +1838,14 @@
       else switchSettingsTab(tab.dataset.view);
     });
   }
+  for (const filterPill of document.querySelectorAll("#materials-filter .filter-pill")) {
+    filterPill.addEventListener("click", () => {
+      for (const pill of document.querySelectorAll("#materials-filter .filter-pill")) {
+        pill.classList.toggle("active", pill === filterPill);
+      }
+      void loadMaterialsView(filterPill.dataset.pillar || null);
+    });
+  }
   els.scrollBottom.addEventListener("click", () => scrollToBottom(true));
   els.chatScroll.addEventListener("scroll", () => {
     updateScrollAffordance();
@@ -1422,30 +1888,64 @@
     loadWorldView().finally(() => setBusy(els.refreshWorld, false));
   });
   els.advanceWorld.addEventListener("click", () => { void advanceWorld(); });
-  els.probeForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!window.confirm("将向选定模型发送一次短测试请求。真实模式下可能产生费用；是否继续？")) return;
-    els.probeResult.className = "probe-result";
-    els.probeResult.textContent = "正在发送一次测试请求…";
-    const submitButton = els.probeForm.querySelector("button[type='submit']");
-    setBusy(submitButton, true, "测试中");
+  /* 每个 profile 一个"测试连通性"按钮：读已保存的本机配置，无需重启即可测。 */
+  async function testProfile(profileName, button) {
+    setBusy(button, true, "测试中");
+    const resultNode = els.apiTestResult;
+    resultNode.className = "probe-result";
+    resultNode.textContent = `正在向 ${profileName} 配置发送一次测试请求…`;
     try {
-      const { data } = await request("/diagnostics/probe", {
+      const { data } = await request("/settings/test", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: els.probeProfile.value }),
+        body: JSON.stringify({ profile: profileName }),
       });
-      els.probeResult.classList.add(data.ok ? "ok" : "bad");
-      els.probeResult.textContent = data.ok
-        ? `测试通过 · ${data.latency_ms} ms · JSON 格式${data.schema_valid === null ? "不适用" : data.schema_valid ? "有效" : "无效"}`
-        : `测试失败 · ${data.error?.code || "PROBE_FAILED"} · ${data.error?.message || "请查看配置。"}`;
-      toast(data.ok ? "模型连接正常。" : "模型连接失败，详见下方结果。", { type: data.ok ? "success" : "error" });
-      await loadDiagnosticsView();
+      if (data.ok) {
+        resultNode.className = "probe-result ok";
+        resultNode.textContent = `✓ ${profileName} 连通 · ${data.model} · ${data.latency_ms} ms${data.reply_preview ? ` · 「${data.reply_preview}」` : ""}`;
+        toastSuccess(`${profileName} 连接正常。`);
+      } else {
+        resultNode.className = "probe-result fail";
+        resultNode.textContent = `✗ ${profileName} 失败 · ${data.error?.code || "?"} · ${data.error?.message || ""}`;
+        toastError(`${profileName} 连接失败：${data.error?.message || "请检查配置。"}`);
+      }
     } catch (error) {
-      els.probeResult.classList.add("bad");
-      els.probeResult.textContent = error.message || "测试请求未完成。";
+      resultNode.className = "probe-result fail";
+      resultNode.textContent = `✗ ${profileName} 测试未完成 · ${error.message || ""}`;
       toastError(error.message || "测试请求未完成。");
-    } finally { setBusy(submitButton, false); }
+    } finally { setBusy(button, false); }
+  }
+  for (const [buttonId, profileName] of [
+    ["test-chat-profile", "chat"],
+    ["test-analysis-profile", "analysis"],
+    ["test-world-profile", "world"],
+  ]) {
+    const button = document.getElementById(buttonId);
+    if (button) button.addEventListener("click", () => { void testProfile(profileName, button); });
+  }
+  /* 切换聊天模型：只改模型名不动 URL/密钥，单按钮快切换。 */
+  els.switchChatModel?.addEventListener("click", async () => {
+    const model = els.apiModel.value.trim();
+    if (!model) { toastWarn("先在上方填写要切换到的模型名。"); return; }
+    setBusy(els.switchChatModel, true, "切换中");
+    try {
+      const { data: current } = await request("/settings/api");
+      const chat = current.chat;
+      if (!chat) { toastError("config.yaml 尚未生成；请先运行 setup.bat。"); return; }
+      const { data } = await request("/settings/api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base_url: chat.base_url, model, model_analysis: current.analysis?.model || model, model_world: current.world?.model || model }),
+      });
+      els.apiHint.textContent = `已切换聊天模型为 ${data.model}。测试连通性通过后，重启应用生效。`;
+      toastSuccess(`聊天模型已切换为 ${data.model}。`);
+    } catch (error) {
+      toastError(error.message || "切换失败。");
+    } finally { setBusy(els.switchChatModel, false); }
   });
+  els.saveApiSettings.addEventListener("click", () => { void saveApiSettings(); });
+  els.saveWeatherSettings.addEventListener("click", () => { void saveWeatherSettings(); });
+  for (const radio of document.querySelectorAll('input[name="weather-provider"]')) {
+    radio.addEventListener("change", syncWeatherFields);
+  }
   els.backupExport.addEventListener("click", async () => {
     setBusy(els.backupExport, true, "生成中…");
     els.backupNotice.textContent = "正在校验并生成数据库快照…";
@@ -1533,4 +2033,36 @@
     if (pending) await checkOperation(false);
     await loadSessions();
   })().catch((error) => toastError(error.message || "无法加载对话，请检查应用是否仍在运行。"));
+  void refreshMoodBadges();
+
+  /* ── 生命层启动：眨眼 + 年糕巡逻 ── */
+  const lifeAvatar = document.querySelector("#top-avatar.life img") || document.querySelector(".life img");
+  if (lifeAvatar && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const blinkOnce = () => {
+      const host = lifeAvatar.parentElement;
+      host.classList.add("blinking");
+      setTimeout(() => host.classList.remove("blinking"), 170);
+      setTimeout(blinkOnce, 6000 + Math.random() * 6000);
+    };
+    setTimeout(blinkOnce, 3500);
+  }
+  /* 年糕巡逻：深夜偶发彩蛋（正式频率：深夜里每小时最多一次的随机抽查）*/
+  function catPatrol() {
+    if (document.body.dataset.late !== "1") return;
+    const cat = document.createElement("div");
+    cat.className = "cat-walk";
+    cat.setAttribute("aria-hidden", "true");
+    /* CAT_WALK_SVG 是仓库内的静态常量，不含任何用户输入；textContent 承载文字 */
+    cat.append(makeSvg(CAT_WALK_SVG));
+    const note = document.createElement("div");
+    note.className = "walk-note";
+    note.textContent = "年糕巡逻中…";
+    cat.append(note);
+    document.body.appendChild(cat);
+    cat.addEventListener("animationend", () => cat.remove());
+  }
+  setInterval(() => {
+    if (Math.random() < 0.12) catPatrol();
+  }, 5 * 60_000);
+  void catPatrol;
 })();

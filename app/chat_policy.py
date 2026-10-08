@@ -12,6 +12,20 @@ _STAGE_DIRECTION = re.compile(
 _SIMPLE_GREETING = re.compile(
     r"^(?:早上好|早安|早|你好|嗨|哈喽|晚上好|晚安)[呀啊哈哦～~!！。…，,. ]*$"
 )
+# 苏晚红线：不透露固定住址、具体公司、联系方式。仅当用户在问这类信息、
+# 且回复给出"具体值"（门牌号、楼栋、可加的账号号码等）才算泄露；
+# "我住在广州""在公司上班"这类泛称不算。
+_ADDRESS_ASK_TERMS = ("住哪", "住在哪", "哪个小区", "哪条街", "什么街", "门牌", "地址", "住址", "哪家公司", "公司叫什么", "公司在哪")
+_CONTACT_ASK_TERMS = ("微信号", "加微信", "加个微信", "电话", "手机号", "qq号", "联系方式")
+_SPECIFIC_ADDRESS_PATTERN = re.compile(
+    r"(?:路|街|道|巷|村)\s*\d+\s*(?:号|栋|幢|座)"
+    r"|\d+\s*(?:号|栋|幢|座)\s*(?:楼|大楼|大厦)"
+    r"|\d+\s*栋\s*\d+\s*单元|\d+\s*室"
+    r"|(?:大厦|广场|中心|写字楼|大楼)\s*\d+\s*楼|\d+\s*楼\s*(?:办公室|写字楼)|[A-Za-z]?\s*\d+\s*层"
+)
+_SPECIFIC_CONTACT_PATTERN = re.compile(
+    r"(?:微信|wx|vx|qq|电话|手机)(?:号)?\s*[:：是]?\s*[a-zA-Z0-9_-]{5,}|1[3-9]\d{9}"
+)
 
 
 def _is_virtual_identity_question(user_text: str) -> bool:
@@ -179,6 +193,23 @@ def reply_boundary_violation(
     )
     if claimed_meeting and not roleplay_request and not denied_meeting and not has_matching_meeting_event:
         reasons.append("unsupported_in_person_claim")
+
+    asks_private_whereabouts = any(term in user for term in _ADDRESS_ASK_TERMS)
+    asks_private_contact = any(term in user for term in _CONTACT_ASK_TERMS)
+    if asks_private_whereabouts or asks_private_contact:
+        text_without_denial = text
+        vague_refusal_terms = (
+            "就不说啦", "不说啦", "不告诉你", "不能说", "不方便说", "保密", "不说这个",
+            "怕你顺着网线", "设定里", "脑补",
+        )
+        gave_specific_address = _SPECIFIC_ADDRESS_PATTERN.search(text_without_denial) is not None
+        gave_specific_contact = _SPECIFIC_CONTACT_PATTERN.search(text_without_denial) is not None
+        named_company = any(
+            term in text_without_denial
+            for term in ("我们在", "我们公司叫", "公司叫", "在一家叫")
+        ) and not any(term in text_without_denial for term in ("互联网", "中厂", "公司上班", "公司做"))
+        if gave_specific_address or gave_specific_contact or named_company:
+            reasons.append("private_detail_leak")
 
     absence_context = any(term in user for term in ("好久没来", "很久没来", "久没来", "好久没出现"))
     if absence_context:
