@@ -19,6 +19,10 @@ from app.models import (
     BackupRequest,
     DiagnosticsProbeRequest,
     InitiativeRequest,
+    MaterialCreateRequest,
+    MaterialUpdateRequest,
+    ChatApiUpdateRequest,
+    WeatherUpdateRequest,
     MemoryCreateRequest,
     MemoryEditRequest,
     MemoryForgetRequest,
@@ -33,6 +37,16 @@ from app.pipeline import handle_initiative, handle_turn
 from app.prompt import build_analysis_prompt
 from app.persona import PersonaDataUnavailable, PersonaPolicyError
 from app.repository import ProposalInvalid, ProposalSourceInvalid, mutation_guard
+from app.settings_io import (
+    SettingsError,
+    import_ccswitch_provider,
+    read_api_settings,
+    read_ccswitch_providers,
+    update_chat_api,
+    update_weather,
+)
+from app.state import DataCorrupt, load_state_rows, mood_label, project_state, time_context
+from app.weather import WeatherUnavailable, fetch_weather
 from app.world import WorldDataCorrupt
 
 
@@ -294,6 +308,76 @@ def forget_memory(fact_id: str, payload: MemoryForgetRequest, request: Request) 
     }
 
 
+@router.post("/materials", status_code=201)
+def create_material(payload: MaterialCreateRequest, request: Request) -> dict:
+    repository = request.app.state.repository
+    try:
+        with mutation_guard():
+            material = repository.save_material(
+                message_id=payload.message_id,
+                pillar=payload.pillar,
+                hook_type=payload.hook_type,
+                note=payload.note,
+            )
+    except ValueError as exc:
+        code = "MATERIAL_DUPLICATE" if "already saved" in str(exc) else "MATERIAL_INVALID"
+        raise problem_for_code(code) from exc
+    except LookupError as exc:
+        raise problem_for_code("OPERATION_NOT_FOUND") from exc
+    except PermissionError as exc:
+        raise problem_for_code("SOURCE_REDACTED") from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return material
+
+
+@router.get("/materials")
+def list_materials(
+    request: Request,
+    status: str = "saved",
+    pillar: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict:
+    try:
+        items = request.app.state.repository.list_materials(status=status, pillar=pillar, limit=limit)
+    except ValueError as exc:
+        raise problem_for_code("MATERIAL_INVALID") from exc
+    except Exception as exc:
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return {"items": items}
+
+
+@router.post("/materials/{material_id}/update")
+def update_material(material_id: str, payload: MaterialUpdateRequest, request: Request) -> dict:
+    repository = request.app.state.repository
+    try:
+        with mutation_guard():
+            material = repository.update_material(
+                material_id,
+                pillar=payload.pillar,
+                hook_type=payload.hook_type,
+                note=payload.note,
+                status=payload.status,
+            )
+    except ValueError as exc:
+        raise problem_for_code("MATERIAL_INVALID") from exc
+    except LookupError as exc:
+        raise problem_for_code("MATERIAL_NOT_FOUND") from exc
+    except PermissionError as exc:
+        raise problem_for_code("MATERIAL_UNAVAILABLE") from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return material
+
+
 @router.get("/persona")
 def get_persona(request: Request) -> dict:
     try:
@@ -313,6 +397,41 @@ def get_persona(request: Request) -> dict:
         "preferences": preferences,
         "voice_summary": row["voice_text"][:200],
         "created_at": row["created_at"],
+    }
+
+
+@router.get("/state")
+def get_state(request: Request) -> dict:
+    repository = request.app.state.repository
+    config = request.app.state.config
+    try:
+        with repository.connection() as connection:
+            character_row = connection.execute(
+                "SELECT * FROM character_state WHERE character_id = 'suwan'"
+            ).fetchone()
+            relationship_row = connection.execute(
+                "SELECT * FROM relationship_state WHERE user_id = 'local-user' AND character_id = 'suwan'"
+            ).fetchone()
+        if character_row is None or relationship_row is None:
+            raise DataCorrupt("character or relationship state is missing")
+        character, relationship = load_state_rows(character_row, relationship_row)
+        now = repository.clock.now()
+        state = project_state(character, relationship, now)
+        context = time_context(
+            now,
+            character_timezone=config.time.character_timezone,
+            display_timezone=config.time.display_timezone,
+        )
+    except (DataCorrupt, TypeError, ValueError) as exc:
+        raise problem_for_code("DATA_CORRUPT") from exc
+    except Exception as exc:
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return {
+        "mood": mood_label(state.valence, state.energy, state.guard_until, context.character_time),
+        "closeness_level": "初识" if state.closeness < 30 else ("熟悉" if state.closeness < 60 else "亲近"),
+        "late_night": context.is_late_night,
+        "scene": context.activity_scene,
+        "guard": state.guard_until is not None and state.guard_until > context.character_time,
     }
 
 
@@ -458,6 +577,99 @@ def resolve_proposal(proposal_id: str, payload: ProposalResolveRequest, request:
         raise problem_for_code("DATABASE_ERROR") from exc
 
 
+@router.get("/settings/api")
+def get_api_settings(request: Request) -> dict:
+    """Redacted settings view; never returns key material."""
+    try:
+        return read_api_settings(request.app.state.project_dir)
+    except Exception as exc:
+        raise problem_for_code("DATA_CORRUPT") from exc
+
+
+@router.post("/settings/api")
+def post_api_settings(payload: ChatApiUpdateRequest, request: Request) -> dict:
+    try:
+        with mutation_guard():
+            result = update_chat_api(
+                request.app.state.project_dir,
+                base_url=payload.base_url,
+                model=payload.model,
+                api_key=payload.api_key,
+                api_key_env=payload.api_key_env,
+                model_analysis=payload.model_analysis,
+                model_world=payload.model_world,
+            )
+    except SettingsError as exc:
+        raise APIProblem(422, "SETTINGS_INVALID", str(exc)) from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return {**result, "notice": "已保存到本机 config.yaml 与 .env。重启应用后生效；两个文件都不会进入 Git。"}
+
+
+@router.post("/settings/weather")
+def post_weather_settings(payload: WeatherUpdateRequest, request: Request) -> dict:
+    try:
+        with mutation_guard():
+            return update_weather(
+                request.app.state.project_dir,
+                provider=payload.provider,
+                city=payload.city,
+                latitude=payload.latitude,
+                longitude=payload.longitude,
+            )
+    except SettingsError as exc:
+        raise APIProblem(422, "SETTINGS_INVALID", str(exc)) from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+
+
+@router.get("/weather")
+def get_weather(request: Request) -> dict:
+    """Current ambient weather for the UI atmosphere; silent degradation."""
+    config = request.app.state.config
+    weather = getattr(config, "weather", None)
+    if weather is None or weather.provider != "open_meteo" or weather.latitude is None or weather.longitude is None:
+        return {"available": False, "reason": "not_configured"}
+    try:
+        view = fetch_weather(weather.latitude, weather.longitude)
+    except WeatherUnavailable:
+        return {"available": False, "reason": "provider_unreachable"}
+    return {"available": True, "city": weather.city, **view}
+
+
+@router.get("/settings/ccswitch")
+def get_ccswitch_providers(request: Request) -> dict:
+    """Local cc-switch providers (redacted); empty list when cc-switch is absent."""
+    try:
+        return {"items": read_ccswitch_providers()}
+    except Exception:
+        return {"items": []}
+
+
+@router.post("/settings/ccswitch/{provider_id}/import")
+def post_ccswitch_import(provider_id: str, request: Request) -> dict:
+    try:
+        with mutation_guard():
+            result = import_ccswitch_provider(request.app.state.project_dir, provider_id)
+    except SettingsError as exc:
+        raise APIProblem(422, "SETTINGS_INVALID", str(exc)) from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return {**result, "notice": "已从 cc-switch 导入到本机 config.yaml 与 .env。重启应用后生效。"}
+
+
 @router.get("/diagnostics")
 def get_diagnostics(request: Request) -> dict:
     config = request.app.state.config
@@ -492,58 +704,72 @@ def get_diagnostics(request: Request) -> dict:
     }
 
 
-@router.post("/diagnostics/probe")
-def probe_model(payload: DiagnosticsProbeRequest, request: Request) -> dict:
-    repository = request.app.state.repository
-    llm_client = request.app.state.llm_client
-    config = request.app.state.config
+@router.post("/settings/test")
+def test_settings_profile(payload: DiagnosticsProbeRequest, request: Request) -> dict:
+    """Connectivity test for one profile, reading the SAVED config from disk.
+
+    保存后无需重启即可测试：本端点现读 config.yaml + .env（不经运行中内存），
+    只发一次短请求；失败返回结构化错误，不抛 5xx。
+    """
+    import os
+
+    from dotenv import load_dotenv
+
     profile_name = payload.profile
+    if profile_name not in {"chat", "analysis", "world"}:
+        raise APIProblem(422, "SETTINGS_INVALID", "未知的模型配置。")
+    project_dir = request.app.state.project_dir
+    config_path = project_dir / "config.yaml"
+    if not config_path.is_file():
+        return {"profile": profile_name, "ok": False, "error": {"code": "CONFIG_MISSING", "message": "config.yaml 不存在；请先运行 setup.bat。"}}
+    try:
+        load_dotenv(project_dir / ".env", override=False)
+        from app.config import load_config
+
+        config = load_config(config_path)
+        profile = getattr(config.profiles, profile_name)
+        api_key = os.environ.get(profile.api_key_env, "").strip()
+        if not api_key:
+            return {"profile": profile_name, "ok": False, "error": {"code": "CONFIG_MISSING", "message": f"环境变量 {profile.api_key_env} 为空；请在上方填入 API 密钥并保存。"}}
+    except Exception as exc:
+        return {"profile": profile_name, "ok": False, "error": {"code": "CONFIG_INVALID", "message": f"配置无法读取：{exc}"}}
+
     if profile_name == "analysis":
-        user_text = "连接测试"
-        messages = build_analysis_prompt(user_text)
+        messages = build_analysis_prompt("连接测试")
     elif profile_name == "world":
-        user_text = None
         messages = (
-            {"role": "system", "content": "仅为连接测试返回一个最小 JSON 对象。不要生成任何真实生活事件。"},
+            {"role": "system", "content": "仅为连接测试返回一个最小 JSON 对象。"},
             {"role": "user", "content": "返回 {\"probe\":true}。"},
         )
     else:
-        user_text = None
         messages = (
-            {"role": "system", "content": "你正在执行连接测试。只用简短中文说明连接测试通过，不生成个人记忆或生活事件。"},
+            {"role": "system", "content": "你正在执行连接测试。只用简短中文说明连接测试通过。"},
             {"role": "user", "content": "请回复：连接测试通过。"},
         )
-    try:
-        with mutation_guard():
-            started = time.perf_counter()
-            try:
-                result = llm_client.generate(
-                    profile_name,
-                    messages,
-                    None,
-                    repository.clock.now() + timedelta(seconds=getattr(config.profiles, profile_name).timeout_seconds + 2),
-                    user_text=user_text,
-                    max_attempts_override=1,
-                )
-            except LLMFailure as exc:
-                return {
-                    "profile": profile_name,
-                    "ok": False,
-                    "latency_ms": exc.latency_ms if exc.latency_ms is not None else round((time.perf_counter() - started) * 1000),
-                    "schema_valid": False if profile_name != "chat" else None,
-                    "error": {"code": exc.code, "message": "连接测试未通过；请查看本地配置和最近诊断记录。"},
-                }
-            schema_valid = True if profile_name == "chat" else isinstance(result.parsed_json, dict)
-            return {
-                "profile": profile_name,
-                "ok": schema_valid,
-                "latency_ms": result.latency_ms,
-                "schema_valid": schema_valid,
-                "error": None if schema_valid else {"code": "REPLY_INVALID", "message": "模型没有返回有效的 JSON 对象。"},
-            }
-    except Exception as exc:
-        from app.db import MutationBusy
+    import time as _time
 
-        if isinstance(exc, MutationBusy):
-            raise problem_for_code("APP_BUSY") from exc
-        raise problem_for_code("DATABASE_ERROR") from exc
+    started = _time.perf_counter()
+    try:
+        from app.llm import LLMFailure, probe_profile_raw
+
+        text = probe_profile_raw(profile, messages)
+        latency = round((_time.perf_counter() - started) * 1000)
+        schema_valid = True if profile_name == "chat" else bool(text and text.strip().startswith("{"))
+        return {
+            "profile": profile_name,
+            "ok": schema_valid,
+            "latency_ms": latency,
+            "model": profile.model,
+            "reply_preview": text[:50],
+            "error": None if schema_valid else {"code": "REPLY_INVALID", "message": "模型没有返回预期的 JSON 对象。"},
+        }
+    except LLMFailure as exc:
+        return {
+            "profile": profile_name,
+            "ok": False,
+            "latency_ms": exc.latency_ms if exc.latency_ms is not None else round((_time.perf_counter() - started) * 1000),
+            "model": profile.model,
+            "error": {"code": exc.code, "message": "连接测试未通过；请检查接口地址、模型名与密钥。"},
+        }
+    except Exception as exc:
+        return {"profile": profile_name, "ok": False, "error": {"code": "UPSTREAM_ERROR", "message": f"请求失败：{exc}"}}

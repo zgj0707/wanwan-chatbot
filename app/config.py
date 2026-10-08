@@ -103,6 +103,7 @@ class AppConfig(StrictConfigModel):
     time: TimeConfig
     profiles: ProfilesConfig
     limits: LimitsConfig
+    weather: "WeatherConfig | None" = None
 
     @model_validator(mode="after")
     def profile_formats_match_their_roles(self) -> AppConfig:
@@ -111,6 +112,14 @@ class AppConfig(StrictConfigModel):
         if not self.profiles.analysis.json_mode or not self.profiles.world.json_mode:
             raise ValueError("analysis and world profiles must use JSON responses")
         return self
+
+
+class WeatherConfig(StrictConfigModel):
+    """Optional ambient weather (Open-Meteo). Failure degrades silently."""
+    provider: Literal["open_meteo", "off"] = "off"
+    city: StrictStr = Field(default="", max_length=40)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 def project_root() -> Path:

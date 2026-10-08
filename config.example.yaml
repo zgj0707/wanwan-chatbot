@@ -15,7 +15,7 @@ profiles:
     max_tokens: 600
     timeout_seconds: 20
     json_mode: false
-    input_budget_units: 9000
+    input_budget_units: 12000
   analysis:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
     model: qwen-flash-character

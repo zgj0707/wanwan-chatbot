@@ -131,7 +131,7 @@ def test_initial_persona_states_metadata_and_life_items_are_exactly_seeded(initi
         assert connection.execute("SELECT COUNT(*) FROM world_events").fetchone()[0] == 0
 
         metadata = dict(connection.execute("SELECT key, value FROM app_meta").fetchall())
-        assert metadata["schema_version"] == "1"
+        assert metadata["schema_version"] == str(SCHEMA_VERSION)
         assert metadata["world_cursor_at"] == clock.now().isoformat().replace("+00:00", "Z")
         assert metadata["initiative_last_at"] == ""
         assert metadata["memory_epoch"] == "0"

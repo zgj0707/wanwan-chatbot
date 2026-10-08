@@ -12,3 +12,7 @@ logs/
 .workbuddy/
 work/
 outputs/
+
+# 本机工具配置（路径含本机代理与个人设置，不进版本库）
+.claude/
+.mcp.json

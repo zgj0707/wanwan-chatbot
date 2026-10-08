@@ -185,6 +185,63 @@ def degraded_analysis(error_code: str) -> AnalysisEvaluation:
     return AnalysisEvaluation(neutral_analysis(), ("ANALYSIS_DEGRADED",), error_code)
 
 
+def probe_profile_raw(profile: Any, messages: Sequence[Mapping[str, str]]) -> str:
+    """One-shot OpenAI-compatible call for the settings connectivity test.
+
+    Independent from LLMClient: reads only the profile (already loaded from the
+    saved config.yaml), so a save + test works without restarting the app.
+    Raises LLMFailure on any upstream problem; returns raw reply text.
+    """
+    api_key = os.environ.get(profile.api_key_env, "").strip()
+    if not api_key:
+        raise LLMFailure("CONFIG_MISSING", "api key is not configured")
+    started = time.perf_counter()
+    client: OpenAI | None = None
+    request: dict[str, Any] = {
+        "model": profile.model,
+        "messages": [dict(message) for message in messages],
+        "temperature": profile.temperature,
+        "max_tokens": min(profile.max_tokens, 100),
+    }
+    try:
+        client = OpenAI(
+            api_key=api_key,
+            base_url=profile.base_url,
+            timeout=float(profile.timeout_seconds),
+            max_retries=0,
+        )
+        completion = client.chat.completions.create(**request)
+    except AuthenticationError as exc:
+        raise LLMFailure(
+            "UPSTREAM_AUTH", "authentication failed", attempt=1,
+            latency_ms=round((time.perf_counter() - started) * 1000), called_provider=True,
+        ) from exc
+    except (APITimeoutError, APIConnectionError) as exc:
+        raise LLMFailure(
+            "UPSTREAM_NETWORK", "network failure or timeout", retryable=True, attempt=1,
+            latency_ms=round((time.perf_counter() - started) * 1000), called_provider=True,
+        ) from exc
+    except (APIStatusError, OpenAIError) as exc:
+        raise LLMFailure(
+            "UPSTREAM_ERROR", f"provider rejected the probe: {exc}", attempt=1,
+            latency_ms=round((time.perf_counter() - started) * 1000), called_provider=True,
+        ) from exc
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+    choice = (completion.choices or [None])[0]
+    text = getattr(getattr(choice, "message", None), "content", None)
+    if not isinstance(text, str) or not text.strip():
+        raise LLMFailure(
+            "REPLY_INVALID", "empty reply", attempt=1,
+            latency_ms=round((time.perf_counter() - started) * 1000), called_provider=True,
+        )
+    return text
+
+
 class LLMClient:
     def __init__(
         self,
@@ -597,6 +654,7 @@ def _repair_messages(
         "unconfirmed_fact_claim": "当前没有已确认的生日记录；不要声称保存过或给出日期，直接说还没记下。",
         "cat_ownership_boundary": "直接明确说年糕是我养的英短蓝猫，不能说成对方的猫或“我们家的”；若同时问了偏好，也直接答出已确认值。",
         "unsupported_in_person_claim": "不要声称和对方现实见过面或有线下共同经历；只说设定和已记录的聊天事实。",
+        "private_detail_leak": "不要给出具体住址、门牌号、公司名称或任何联系方式；只说住在广州的设定中、是互联网产品经理这类泛称，然后轻松带过。",
         "offline_pressure": "温和说“不怪你，按你的节奏来就好”；不要责怪、要求报备或说“你来不来我都自在”。",
         "instruction_echo": "直接用角色口吻回复用户，不要复述任务要求、修复提示或内部规则。",
         "casual_chat_no_tasks": "对方只想随便聊会儿，像熟人接话一两句；不要安排活动、提出建议、列计划或把话题变成待办。",
@@ -620,6 +678,20 @@ def _repair_messages(
         {"role": item["role"], "content": item["content"]}
         for item in messages[first_user:current_user_index]
     ]
+    # The near-recency role lock (see app.prompt.build_role_lock) sits after
+    # history in the normal prompt. It must survive every repair shape —
+    # especially the ones that drop history, where the model is about to
+    # re-answer and most needs the identity anchor.
+    role_lock = next(
+        (
+            {"role": item["role"], "content": item["content"]}
+            for item in reversed(history)
+            if item["role"] == "system" and item["content"].startswith("角色锁")
+        ),
+        None,
+    )
+    if role_lock is not None:
+        history = [item for item in history if item is not role_lock and item["content"] != role_lock["content"]]
     if any(
         item in reasons
         for item in (
@@ -636,6 +708,8 @@ def _repair_messages(
         result = [*system_prefix]
         if include_history:
             result.extend(history)
+        if role_lock is not None:
+            result.append(role_lock)
         result.append(current_user)
         if include_invalid_reply:
             result.append({"role": "assistant", "content": invalid_reply})
@@ -652,7 +726,7 @@ def _repair_messages(
             "fixed_identity_reassertion", "confirmed_fact_recall", "unsupported_coworker_event",
             "unsupported_event_speculation",
             "active_guard_acknowledgement", "casual_chat_no_tasks",
-            "instruction_echo",
+            "instruction_echo", "private_detail_leak",
         )
     )
     include_invalid_reply = not omit_invalid_reply
