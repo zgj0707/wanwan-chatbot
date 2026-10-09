@@ -7,7 +7,7 @@
   <title>苏晚晚</title>
   <link rel="stylesheet" href="/ui/style.css">
   <link rel="stylesheet" href="/ui/life.css">
-  <meta name="ui-build" content="2026-10-09-p4">
+  <meta name="ui-build" content="2026-10-09-p5">
 </head>
 <body>
   <!-- SUWAN_BOOTSTRAP -->
@@ -254,9 +254,11 @@
 
         <section class="panel-card" id="background-settings-card">
           <div class="section-title"><h2>聊天背景</h2><span class="count-badge" id="background-status">默认</span></div>
-          <p class="api-note">上传一张本机图片当聊天背景（只存本机浏览器，不上传服务器）。建议 8MB 以内的横图。右下角的"窗外"天气注记会照常显示。</p>
-          <div class="settings-actions">
-            <button id="pick-background" class="secondary-button" type="button">选择图片…</button>
+          <p class="api-note">选一张她的情绪背景，或上传本机图片（只存本机浏览器，不上传服务器）。「跟随她的心情」会按晚晚当前状态自动切换。</p>
+          <div class="mood-background-grid" id="mood-background-grid"></div>
+          <div class="settings-actions" style="margin-top: 10px;">
+            <button id="mood-follow-background" class="secondary-button" type="button">跟随她的心情</button>
+            <button id="pick-background" class="text-button" type="button">上传本机图片…</button>
             <button id="clear-background" class="text-button" type="button">恢复默认</button>
           </div>
         </section>

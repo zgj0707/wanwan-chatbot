@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0.00" stop-color="#f6dcc4"/><stop offset="0.45" stop-color="#f0b98e"/><stop offset="0.75" stop-color="#e39a76"/><stop offset="1.00" stop-color="#c98a6d"/></linearGradient><rect width="1600" height="900" fill="url(#sky)"/>
+<radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#fff3e0" stop-opacity=".9"/><stop offset="1" stop-color="#fff3e0" stop-opacity="0"/>
+</radialGradient></defs>
+
+<circle cx="1152" cy="378" r="306" fill="url(#sun)"/>
+<circle cx="1152" cy="378" r="68" fill="#fbe9d2" opacity=".85"/>
+<ellipse cx="480" cy="216" rx="320" ry="32" fill="#f8d9bd" opacity=".55"/>
+<ellipse cx="880" cy="153" rx="224" ry="25" fill="#f8d9bd" opacity=".4"/>
+<rect x="0" y="702" width="1600" height="198" fill="#8a5138" opacity=".16"/>
+<g stroke="#8a5138" opacity=".2" stroke-width="3" stroke-linecap="round">
+<path d="M 192 720 V 378"/>
+<path d="M 192 378 h 26" />
+<path d="M 1408 720 V 450"/>
+<path d="M 1408 450 h -26"/>
+</g>
+<g fill="#8a5138" opacity=".12">
+<circle cx="320" cy="774" r="5"/><circle cx="544" cy="810" r="4"/>
+<circle cx="992" cy="792" r="5"/><circle cx="1280" cy="828" r="4"/>
+</g>
+</svg>

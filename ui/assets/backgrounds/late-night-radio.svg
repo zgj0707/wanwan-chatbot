@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0.00" stop-color="#2e3a54"/><stop offset="0.60" stop-color="#41506e"/><stop offset="1.00" stop-color="#4a5d82"/></linearGradient><rect width="1600" height="900" fill="url(#sky)"/>
+<radialGradient id="moon" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#e8edf6" stop-opacity=".8"/><stop offset="1" stop-color="#e8edf6" stop-opacity="0"/>
+</radialGradient>
+<linearGradient id="glow" x1="0" y1="1" x2="0" y2="0">
+<stop offset="0" stop-color="#e8c9a8" stop-opacity=".22"/><stop offset="1" stop-color="#e8c9a8" stop-opacity="0"/>
+</linearGradient></defs>
+<circle cx="1248" cy="216" r="270" fill="url(#moon)"/>
+<circle cx="1248" cy="216" r="63" fill="#e8edf6" opacity=".75"/>
+<g fill="#dfe6f2" opacity=".5">
+<circle cx="288" cy="162" r="2.4"/><circle cx="512" cy="90" r="1.8"/>
+<circle cx="800" cy="198" r="2"/><circle cx="992" cy="72" r="1.6"/>
+<circle cx="640" cy="306" r="1.5"/>
+</g>
+<rect x="0" y="738" width="1600" height="162" fill="url(#glow)"/>
+<g stroke="#e8c9a8" opacity=".16" stroke-width="3" stroke-linecap="round">
+<path d="M 224 756 V 495"/>
+<path d="M 1344 756 V 540"/>
+</g>
+</svg>
