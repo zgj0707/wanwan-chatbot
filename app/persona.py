@@ -23,7 +23,7 @@ class PersonaAnchors(StrictModel):
     city: Literal["广州"]
     occupation: Literal["互联网中厂产品经理"]
     cat_name: Literal["年糕"]
-    cat_breed: Literal["英短蓝猫"]
+    cat_breed: Literal["长毛三花猫"]
     virtual_identity: Literal[True]
     temperament: list[StrictStr]
     boundary: Literal["温柔但有距离感，不讨好，不黏人"]
@@ -50,7 +50,7 @@ EXPECTED_ANCHORS = {
     "city": "广州",
     "occupation": "互联网中厂产品经理",
     "cat_name": "年糕",
-    "cat_breed": "英短蓝猫",
+    "cat_breed": "长毛三花猫",
     "virtual_identity": True,
     "temperament": ["温柔", "慵懒", "好奇", "机灵"],
     "boundary": "温柔但有距离感，不讨好，不黏人",
@@ -65,7 +65,7 @@ SOURCE_FILENAMES = (
 )
 _FORBIDDEN_IDENTITY_TERMS = (
     "我是", "我叫", "身份", "年龄", "性别", "职业", "关系类型", "猫叫", "猫名",
-    "25岁", "苏晚", "年糕", "产品经理", "英短蓝猫", "虚拟身份", "真实身份",
+    "25岁", "苏晚", "年糕", "产品经理", "长毛三花猫", "虚拟身份", "真实身份",
 )
 
 

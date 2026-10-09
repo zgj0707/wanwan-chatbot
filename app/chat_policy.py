@@ -150,7 +150,7 @@ def reply_boundary_violation(
         )
         claims_ownership = any(
             term in text
-            for term in ("我养", "我自己养", "我家的猫", "我的猫", "年糕是我的英短", "年糕是我的猫")
+            for term in ("我养", "我自己养", "我家的猫", "我的猫", "年糕是我的长毛三花", "年糕是我的猫")
         )
         if not acknowledges or "年糕" not in text or not claims_ownership:
             reasons.append("cat_ownership_correction")
