@@ -322,6 +322,8 @@ def clean_chat_reply(reply: str, user_text: str | None = None) -> str:
     """Remove parenthetical stage directions while preserving the chat text."""
     cleaned = _STAGE_DIRECTION.sub("", reply).strip()
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    # 空行折叠：微信气泡不分行文段落；连续换行压成单个换行
+    cleaned = re.sub(r"\n\s*\n+", "\n", cleaned)
     if user_text is not None and _SIMPLE_GREETING.fullmatch(user_text.strip()):
         too_many_questions = cleaned.count("?") + cleaned.count("？") > 1
         overfamiliar_followup = any(

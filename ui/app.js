@@ -38,6 +38,7 @@
     contextMenu: document.getElementById("context-menu"),
     replyBar: document.getElementById("reply-bar"),
     replyPreview: document.getElementById("reply-preview"),
+    moodBackgroundGrid: document.getElementById("mood-background-grid"),
     scrollBottom: document.getElementById("scroll-bottom"),
     pending: document.getElementById("pending-area"),
     form: document.getElementById("composer"),
@@ -1144,6 +1145,7 @@
     sad: "低落",
     cold: "有点距离感",
   };
+  let lastFollowedBackground = "";
   async function refreshMoodBadges() {
     if (!els.moodBadges) return;
     try {
@@ -1151,6 +1153,13 @@
       renderMoodBadges(data);
     } catch {
       renderMoodBadges(null);
+    }
+    if (loadMoodBackgroundChoice() === "@mood") {
+      const target = moodFollowBackground() || "";
+      if (target !== lastFollowedBackground) {
+        lastFollowedBackground = target;
+        applyBackground();
+      }
     }
   }
   function renderMoodBadges(state) {
@@ -1513,6 +1522,57 @@
   /* ── 消息撤回 / emoji 回应 / 本地背景 ────────── */
   const REACTIONS_KEY = "suwan.reactions.v1";
   const BACKGROUND_KEY = "suwan.background.v1";
+  const MOOD_BACKGROUND_KEY = "suwan.mood-background.v1";
+  const MOOD_BACKGROUNDS = [
+    { id: "sunset-road", label: "晚霞下班路", source: "下班看到这片晚霞，突然觉得今天还行。", follow: ["calm"] },
+    { id: "late-night-radio", label: "深夜电台", source: "也不是不开心，就是有点累，像手机电量剩 3% 那种累。", follow: ["tired", "sad"] },
+    { id: "cat-sun", label: "猫爪太阳", source: "年糕晒太阳的下午", follow: ["happy"] },
+    { id: "desk-morning", label: "周五工位", source: "早高峰的地铁，人和人之间没有缝隙。但我今天挤到了座位，赚了。", follow: ["calm"] },
+    { id: "rainy-window", label: "微雨窗", source: "微雨的玻璃窗", follow: ["cold"] },
+  ];
+  function moodBackgroundUrl(id) {
+    return `/ui/assets/backgrounds/${id}.svg`;
+  }
+  function loadMoodBackgroundChoice() {
+    try { return localStorage.getItem(MOOD_BACKGROUND_KEY) || ""; } catch { return ""; }
+  }
+  function saveMoodBackgroundChoice(value) {
+    try { localStorage.setItem(MOOD_BACKGROUND_KEY, value); } catch { /* 忽略 */ }
+  }
+  function renderMoodBackgroundGrid() {
+    const grid = els.moodBackgroundGrid;
+    if (!grid) return;
+    grid.replaceChildren();
+    const active = loadMoodBackgroundChoice();
+    for (const item of MOOD_BACKGROUNDS) {
+      const card = make("button", `mood-bg-card${active === item.id ? " active" : ""}`);
+      card.type = "button";
+      card.title = item.source;
+      const preview = make("span", "mood-bg-preview");
+      const img = document.createElement("img");
+      img.src = moodBackgroundUrl(item.id);
+      img.alt = "";
+      preview.append(img);
+      card.append(preview);
+      card.append(make("span", "mood-bg-label", item.label));
+      card.addEventListener("click", () => {
+        saveMoodBackgroundChoice(active === item.id ? "" : item.id);
+        applyBackground();
+        renderMoodBackgroundGrid();
+        updateBackgroundStatus();
+        toastSuccess(active === item.id ? "已恢复默认背景。" : `背景换成了「${item.label}」。`, { duration: 2200 });
+      });
+      grid.append(card);
+    }
+  }
+  function updateBackgroundStatus() {
+    const badge = document.getElementById("background-status");
+    if (!badge) return;
+    const choice = loadMoodBackgroundChoice();
+    let custom = false;
+    try { custom = Boolean(localStorage.getItem(BACKGROUND_KEY)); } catch { /* 忽略 */ }
+    badge.textContent = custom ? "本机图片" : choice ? (MOOD_BACKGROUNDS.find((item) => item.id === choice) || {}).label || "情绪背景" : "默认";
+  }
   const REACTION_SET = ["👍", "❤️", "😂", "😮", "🥺", "scratch"];
   const RETRACT_WINDOW_MS = 10 * 60 * 1000;
   function loadReactions() {
@@ -1570,13 +1630,32 @@
     if (!shell) return;
     shell.querySelectorAll("img.chat-background").forEach((node) => node.remove());
     document.body.removeAttribute("data-custom-bg");
-    if (!value) return;
+    let source = value;
+    if (!source) {
+      const choice = loadMoodBackgroundChoice();
+      if (choice === "@mood") {
+        const moodId = moodFollowBackground();
+        if (moodId) source = moodBackgroundUrl(moodId);
+      } else if (choice) {
+        source = moodBackgroundUrl(choice);
+      }
+    }
+    if (!source) { renderMoodBackgroundGrid(); updateBackgroundStatus(); return; }
     const img = document.createElement("img");
-    img.src = value;
+    img.src = source;
     img.alt = "";
     img.className = "chat-background";
     shell.prepend(img);
     document.body.setAttribute("data-custom-bg", "1");
+    renderMoodBackgroundGrid();
+    updateBackgroundStatus();
+  }
+  function moodFollowBackground() {
+    const mood = document.body.dataset.mood || "calm";
+    const late = document.body.dataset.late === "1";
+    if (late) return "late-night-radio";
+    const match = MOOD_BACKGROUNDS.find((item) => item.follow.includes(mood));
+    return match ? match.id : "sunset-road";
   }
   function pickBackground() {
     const inputNode = document.createElement("input");
@@ -2061,7 +2140,13 @@ ${text}`;
   /* ── 事件绑定 ─────────────────────────────── */
   document.getElementById("cancel-reply")?.addEventListener("click", () => setReplyTarget(null));
   document.getElementById("pick-background")?.addEventListener("click", () => pickBackground());
-  document.getElementById("clear-background")?.addEventListener("click", () => clearBackground());
+  document.getElementById("clear-background")?.addEventListener("click", () => { saveMoodBackgroundChoice(""); clearBackground(); });
+  document.getElementById("mood-follow-background")?.addEventListener("click", () => {
+    const following = loadMoodBackgroundChoice() === "@mood";
+    saveMoodBackgroundChoice(following ? "" : "@mood");
+    applyBackground();
+    toastSuccess(following ? "已退出跟随模式。" : "会跟着晚晚的心情换背景啦。", { duration: 2600 });
+  });
   els.form.addEventListener("submit", (event) => { event.preventDefault(); void submit(); });
   els.send.addEventListener("click", (event) => {
     if (isWaiting || polling) { event.preventDefault(); cancelWait(); }
@@ -2326,6 +2411,8 @@ ${text}`;
   setInterval(updateClock, 60_000);
   loadWeatherAmbience();
   applyBackground();
+  renderMoodBackgroundGrid();
+  updateBackgroundStatus();
   syncSearchClear();
   resizeInput();
   (async () => {

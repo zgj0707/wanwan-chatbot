@@ -199,6 +199,23 @@ def create_app(
     def avatar_image() -> FileResponse:
         return FileResponse(ui_dir / "assets" / "avatar.png", media_type="image/png", headers=static_cache)
 
+    mood_background_names = frozenset({
+        "sunset-road", "late-night-radio", "cat-sun", "desk-morning", "rainy-window",
+    })
+
+    @app.get("/ui/assets/backgrounds/{name}", include_in_schema=False)
+    def mood_background(name: str) -> FileResponse:
+        base, _, extension = name.rpartition(".")
+        if extension != "svg" or base not in mood_background_names:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404)
+        return FileResponse(
+            ui_dir / "assets" / "backgrounds" / name,
+            media_type="image/svg+xml",
+            headers=static_cache,
+        )
+
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     def settings() -> HTMLResponse:
         model = escape(config.profiles.chat.model)
