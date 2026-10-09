@@ -178,8 +178,7 @@
         </section>
         <section class="panel-card" id="api-settings-card">
           <div class="section-title"><h2>模型 API</h2><span id="api-key-status" class="count-badge">未配置</span></div>
-          <p class="api-note">选择一个模板或直接填写任何 OpenAI 兼容端点。密钥只保存在本机 <code>config.yaml</code> 与 <code>.env</code>（均在 .gitignore 中，不会进入 Git），页面不显示也不回传密钥明文。</p>
-          <div class="template-row" id="api-templates" role="radiogroup" aria-label="API 模板"></div>
+          <p class="api-note">填好这三样，晚晚就能开口说话：接口地址、模型名、API 密钥。密钥只保存在本机 <code>config.yaml</code> 与 <code>.env</code>（均在 .gitignore 中，不会进入 Git），页面不显示也不回传密钥明文。</p>
           <label for="api-base-url">接口地址（base_url）</label>
           <input id="api-base-url" maxlength="500" autocomplete="off" spellcheck="false" placeholder="https://…/v1">
           <div class="model-row">
@@ -189,24 +188,31 @@
             </div>
             <button id="switch-chat-model" class="text-button" type="button" title="用上方模型名更新聊天模型并保存">切换聊天模型</button>
           </div>
-          <details class="advanced-profiles">
-            <summary>分析 / 生活事件模型（高级，通常与聊天模型保持一致）</summary>
-            <label for="api-model-analysis">分析模型（analysis，JSON 输出）</label>
-            <input id="api-model-analysis" maxlength="200" autocomplete="off" spellcheck="false" placeholder="与聊天模型相同">
-            <label for="api-model-world">生活事件模型（world，JSON 输出）</label>
-            <input id="api-model-world" maxlength="200" autocomplete="off" spellcheck="false" placeholder="与聊天模型相同">
-          </details>
           <label for="api-key-input">API 密钥<span class="label-hint">（留空表示保持现有密钥不变）</span></label>
           <input id="api-key-input" type="password" maxlength="400" autocomplete="new-password" placeholder="••••••••">
-          <p id="api-hint" class="api-note faint"></p>
           <div class="settings-actions">
             <button id="save-api-settings" class="primary-button" type="button">保存模型设置</button>
-            <button id="test-chat-profile" class="secondary-button test-button" type="button">测试聊天连通性</button>
-            <button id="test-analysis-profile" class="secondary-button test-button" type="button">测试分析连通性</button>
-            <button id="test-world-profile" class="secondary-button test-button" type="button">测试生活事件连通性</button>
+            <button id="test-chat-profile" class="secondary-button test-button" type="button">测试连通性</button>
           </div>
+          <p id="api-hint" class="api-note faint"></p>
           <div id="api-test-result" class="probe-result" aria-live="polite"></div>
           <p id="api-settings-notice" class="manager-notice hidden" role="status" aria-live="polite"></p>
+          <details class="advanced-profiles">
+            <summary>快捷模板与高级选项（懂行的再用）</summary>
+            <div class="template-row" id="api-templates" role="radiogroup" aria-label="API 模板"></div>
+            <p class="api-note faint">点一个模板会自动填好接口地址和模型名，再自己填密钥即可。</p>
+            <details class="advanced-profiles">
+              <summary>分析 / 生活事件模型（通常与聊天模型保持一致）</summary>
+              <label for="api-model-analysis">分析模型（analysis，JSON 输出）</label>
+              <input id="api-model-analysis" maxlength="200" autocomplete="off" spellcheck="false" placeholder="与聊天模型相同">
+              <label for="api-model-world">生活事件模型（world，JSON 输出）</label>
+              <input id="api-model-world" maxlength="200" autocomplete="off" spellcheck="false" placeholder="与聊天模型相同">
+            </details>
+            <div class="settings-actions">
+              <button id="test-analysis-profile" class="secondary-button test-button" type="button">测试分析连通性</button>
+              <button id="test-world-profile" class="secondary-button test-button" type="button">测试生活事件连通性</button>
+            </div>
+          </details>
           <div class="ccswitch-section" id="ccswitch-section">
             <div class="section-title"><h2>从 cc-switch 导入</h2><span class="count-badge" id="ccswitch-count">0</span></div>
             <p class="api-note">读取本机 cc-switch 的第三方网关配置（NewAPI 等）。令牌从本机数据库直接写入本机 <code>.env</code>，不经网络、不进 Git。</p>
