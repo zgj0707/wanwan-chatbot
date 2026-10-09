@@ -600,3 +600,23 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
   border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: 12.5px;
   color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
   max-height: 3.6em; overflow-y: hidden; }
+
+/* ── emoji 回应 ───────────────────────────── */
+.reaction-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.reaction-chip { font-size: 13px; line-height: 1; padding: 3px 8px; border-radius: 999px;
+  background: var(--accent-soft); border: 1px solid var(--accent-border); }
+.reaction-picker { display: flex; gap: 2px; padding: 2px; }
+.reaction-emoji { font-size: 18px; line-height: 1; padding: 6px 8px; border-radius: 9px;
+  transition: background var(--dur-fast), transform var(--dur-fast); }
+.reaction-emoji:hover { background: var(--accent-soft); transform: scale(1.16); }
+.reaction-paw { font-size: 16px; }
+
+/* ── 本地图片背景 ─────────────────────────── */
+.chat-background { position: fixed; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; z-index: 0; pointer-events: none; opacity: .16; filter: saturate(.92); }
+body[data-custom-bg="1"] .chat-scroll,
+body[data-custom-bg="1"] .messages,
+body[data-custom-bg="1"] .composer,
+body[data-custom-bg="1"] .reply-bar { position: relative; z-index: 1; }
+body[data-custom-bg="1"] .bubble { background: rgba(255, 253, 249, .93); }
+body[data-custom-bg="1"] .message-row.user .bubble { background: rgba(243, 227, 208, .95); }

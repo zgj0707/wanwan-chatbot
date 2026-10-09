@@ -1510,6 +1510,105 @@
       loadEarlierBusy = false;
     }
   }
+  /* ── 消息撤回 / emoji 回应 / 本地背景 ────────── */
+  const REACTIONS_KEY = "suwan.reactions.v1";
+  const BACKGROUND_KEY = "suwan.background.v1";
+  const REACTION_SET = ["👍", "❤️", "😂", "😮", "🥺", "scratch"];
+  const RETRACT_WINDOW_MS = 10 * 60 * 1000;
+  function loadReactions() {
+    try { return JSON.parse(localStorage.getItem(REACTIONS_KEY) || "{}"); } catch { return {}; }
+  }
+  function saveReactions(map) {
+    try { localStorage.setItem(REACTIONS_KEY, JSON.stringify(map)); } catch { /* 忽略 */ }
+  }
+  let reactions = loadReactions();
+  function messageReactions(messageId) {
+    const entry = reactions[messageId];
+    return entry && typeof entry === "object" ? entry : {};
+  }
+  function toggleReaction(messageId, emoji) {
+    const entry = { ...messageReactions(messageId) };
+    if (entry[emoji]) delete entry[emoji];
+    else entry[emoji] = (entry[emoji] || 0) + 1;
+    if (!Object.keys(entry).length) delete reactions[messageId];
+    else reactions[messageId] = entry;
+    saveReactions(reactions);
+  }
+  function applyReactions(bubble, messageId) {
+    bubble.querySelectorAll(".reaction-row").forEach((node) => node.remove());
+    const entry = messageReactions(messageId);
+    const emojis = Object.keys(entry);
+    if (!emojis.length) return;
+    const rowNode = make("div", "reaction-row");
+    for (const emoji of emojis) {
+      rowNode.append(make("span", "reaction-chip", emoji));
+    }
+    bubble.append(rowNode);
+  }
+
+  async function retractMessage(message, row) {
+    try {
+      await request(`/messages/${message.id}/retract`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (row) {
+        const bubbleNode = row.querySelector(".bubble");
+        if (bubbleNode) {
+          bubbleNode.textContent = "消息已撤回";
+          bubbleNode.classList.add("redacted");
+        }
+        row.querySelectorAll(".message-actions, .reaction-row").forEach((node) => node.remove());
+      }
+      toastSuccess("已撤回，晚晚不会再看到这条消息。", { duration: 3000 });
+    } catch (error) {
+      toastError(error.message || "无法撤回这条消息。", { duration: 4200 });
+    }
+  }
+
+  function applyBackground() {
+    let value = null;
+    try { value = localStorage.getItem(BACKGROUND_KEY); } catch { /* 忽略 */ }
+    const shell = document.querySelector(".chat-scroll");
+    if (!shell) return;
+    shell.querySelectorAll("img.chat-background").forEach((node) => node.remove());
+    document.body.removeAttribute("data-custom-bg");
+    if (!value) return;
+    const img = document.createElement("img");
+    img.src = value;
+    img.alt = "";
+    img.className = "chat-background";
+    shell.prepend(img);
+    document.body.setAttribute("data-custom-bg", "1");
+  }
+  function pickBackground() {
+    const inputNode = document.createElement("input");
+    inputNode.type = "file";
+    inputNode.accept = "image/*";
+    inputNode.addEventListener("change", () => {
+      const file = inputNode.files && inputNode.files[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) {
+        toastError("图片太大（上限 8MB），换一张小一点的吧。", { duration: 4200 });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          localStorage.setItem(BACKGROUND_KEY, String(reader.result));
+          applyBackground();
+          toastSuccess("聊天背景已更新。", { duration: 2400 });
+        } catch {
+          toastError("图片太大，浏览器存不下（换张小图试试）。", { duration: 4200 });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    inputNode.click();
+  }
+  function clearBackground() {
+    try { localStorage.removeItem(BACKGROUND_KEY); } catch { /* 忽略 */ }
+    applyBackground();
+    toastSuccess("已恢复默认背景。", { duration: 2200 });
+  }
+
   /* ── 消息右键菜单与引用回复 ─────────────────── */
   let replyTarget = null;
   function setReplyTarget(message) {
@@ -1548,10 +1647,19 @@
         els.input.focus();
       });
     }
+    add("回应", () => showReactionPicker(x, y, message));
+    const createdMs = message.created_at ? Date.parse(message.created_at) : 0;
+    if (isUser && createdMs && Date.now() - createdMs <= RETRACT_WINDOW_MS) {
+      separator();
+      add("撤回（她将看不到）", () => {
+        const rowNode = els.messages.querySelector(`[data-msg-id="${message.id}"]`);
+        void retractMessage(message, rowNode);
+      }, { danger: true });
+    }
     separator();
-    add(isUser ? "删除此消息（本地隐藏）" : "删除此消息（本地隐藏）", () => {
-      const row = els.messages.querySelector(`[data-msg-id="${message.id}"]`);
-      if (row) row.remove();
+    add("隐藏此消息（仅本页）", () => {
+      const rowNode = els.messages.querySelector(`[data-msg-id="${message.id}"]`);
+      if (rowNode) rowNode.remove();
       toastWarn("已在本页隐藏这条消息（数据库保留）。", { duration: 3200 });
     }, { danger: true });
     menu.classList.remove("hidden");
@@ -1562,6 +1670,45 @@
     menu.style.top = `${Math.max(8, top)}px`;
     const first = menu.querySelector("button");
     if (first) first.focus();
+  }
+  function showReactionPicker(x, y, message) {
+    closeContextMenu();
+    const picker = els.contextMenu;
+    picker.replaceChildren();
+    const rowNode = make("div", "reaction-picker");
+    for (const emoji of REACTION_SET) {
+      if (emoji === "scratch") {
+        const pawButton = make("button", "reaction-emoji reaction-paw", "🐾");
+        pawButton.type = "button";
+        pawButton.title = "猫爪盖章";
+        pawButton.addEventListener("click", () => {
+          toggleReaction(message.id, "🐾");
+          refreshMessageReactions(message.id);
+          closeContextMenu();
+        });
+        rowNode.append(pawButton);
+        continue;
+      }
+      const button = make("button", "reaction-emoji", emoji);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        toggleReaction(message.id, emoji);
+        refreshMessageReactions(message.id);
+        closeContextMenu();
+      });
+      rowNode.append(button);
+    }
+    picker.append(rowNode);
+    picker.classList.remove("hidden");
+    const rect = picker.getBoundingClientRect();
+    picker.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 10))}px`;
+    picker.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 10))}px`;
+  }
+  function refreshMessageReactions(messageId) {
+    const rowNode = els.messages.querySelector(`[data-msg-id="${messageId}"]`);
+    if (!rowNode) return;
+    const bubbleNode = rowNode.querySelector(".bubble");
+    if (bubbleNode) applyReactions(bubbleNode, messageId);
   }
   function closeContextMenu() {
     els.contextMenu.classList.add("hidden");
@@ -1602,6 +1749,7 @@
     if (!user && !message.redacted && /年糕|猫/.test(message.content || "")) {
       bubble.append(makeSvg(CAT_PEEK_SVG, "cat-peek"));
     }
+    if (message.id && !message.redacted) applyReactions(bubble, message.id);
     if (!message.redacted && message.content) {
       const actions = make("div", "message-actions");
       const copyButton = make("button", "copy-button", "复制");
@@ -1912,6 +2060,8 @@ ${text}`;
 
   /* ── 事件绑定 ─────────────────────────────── */
   document.getElementById("cancel-reply")?.addEventListener("click", () => setReplyTarget(null));
+  document.getElementById("pick-background")?.addEventListener("click", () => pickBackground());
+  document.getElementById("clear-background")?.addEventListener("click", () => clearBackground());
   els.form.addEventListener("submit", (event) => { event.preventDefault(); void submit(); });
   els.send.addEventListener("click", (event) => {
     if (isWaiting || polling) { event.preventDefault(); cancelWait(); }
@@ -2175,6 +2325,7 @@ ${text}`;
   updateClock();
   setInterval(updateClock, 60_000);
   loadWeatherAmbience();
+  applyBackground();
   syncSearchClear();
   resizeInput();
   (async () => {
