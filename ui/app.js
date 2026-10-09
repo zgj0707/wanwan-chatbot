@@ -155,10 +155,20 @@
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
   }
-  /* 静态 SVG 装饰：仓库内常量经 DOMParser 解析为 DOM（渲染路径不拼 HTML 字符串）*/
+  /* 静态 SVG 装饰：仓库内常量经 DOMParser 解析为 DOM（渲染路径不拼 HTML 字符串）。
+     部分环境里 DOMParser(image/svg+xml) 产出的元素不在 SVG 命名空间（namespaceURI 为
+     null），CSS 尺寸/动画会全部失效——按标签名在 SVG 命名空间下重建一遍再返回。 */
   function makeSvg(markup, className) {
     const doc = new DOMParser().parseFromString(markup.trim(), "image/svg+xml");
-    const node = document.importNode(doc.documentElement, true);
+    const source = doc.documentElement;
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const rebuild = (node) => {
+      const copy = document.createElementNS(SVG_NS, node.localName);
+      for (const attr of node.attributes) copy.setAttribute(attr.name, attr.value);
+      for (const child of node.children) copy.appendChild(rebuild(child));
+      return copy;
+    };
+    const node = rebuild(source);
     if (className) node.setAttribute("class", className);
     return node;
   }
