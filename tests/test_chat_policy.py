@@ -21,7 +21,7 @@ def test_simulated_simple_goodnight_reply_is_preserved():
 
 def test_simulated_cat_correction_accepts_correct_ownership_and_no_user_interaction():
     user = "年糕是苏晚晚的猫，你刚才怎么会问我跟它的互动？"
-    reply = "你说得对，我把关系弄错了。年糕是我养的英短蓝猫。"
+    reply = "你说得对，我把关系弄错了。年糕是我养的长毛三花猫。"
 
     assert reply_boundary_violation(
         user,
