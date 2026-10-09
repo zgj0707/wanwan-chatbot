@@ -31,7 +31,7 @@
   --warn-bg: #fdf6e6;
   --warn-border: #e8dcbc;
   --warn-ink: #6f5e33;
-  --user-bubble: #e8ddd0;
+  --user-bubble: #f3e3d0;
   --user-ink: #4a3c2e;
   /* mood 色（低饱和暖调，全部界面渗透共用） */
   --mood-calm: #8ba888;   --mood-calm-soft: #eef4ec;
@@ -221,12 +221,17 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .initiative-notice.error { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-ink); }
 
 .messages { width: min(var(--content-width), calc(100% - 40px)); margin: 0 auto; padding: 22px 0 18px; display: flex; flex-direction: column; gap: 26px; }
+/* 连发合并：同一方连续消息收紧（JS 在每组首行加 .group-start） */
+.messages .message-row + .message-row:not(.group-start) { margin-top: -18px; }
+.messages .message-row.user + .message-row.user:not(.group-start) .avatar.user-avatar,
+.messages .message-row.user + .message-row.user:not(.group-start) .message-author-row { visibility: hidden; }
+.messages .message-row.user + .message-row.user:not(.group-start) .message-body { opacity: 0.94; }
 
 /* 日期分隔条 */
 .day-divider { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 10.5px; letter-spacing: .06em; margin: 2px 0; }
 .day-divider::before, .day-divider::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); }
 
-.message-row { display: flex; gap: 10px; align-items: flex-end; animation: message-in 260ms var(--ease) both; }
+.message-row { display: flex; gap: 10px; align-items: flex-start; animation: message-in 260ms var(--ease) both; }
 .message-row.user { justify-content: flex-end; }
 @keyframes message-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .avatar { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 600; background: linear-gradient(150deg, #d9cbb8, #c4b29a); box-shadow: 0 2px 8px rgba(201, 138, 109, .24); user-select: none; }
@@ -235,8 +240,8 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .message-author-row { display: flex; align-items: baseline; gap: 8px; padding: 0 5px; }
 .message-author { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
 .message-row.user .message-author-row { justify-content: flex-end; }
-.bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 4px 16px 16px 16px; padding: 11px 15px; font-size: 14.5px; line-height: 1.78; letter-spacing: .01em; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--shadow-sm); width: fit-content; max-width: 100%; }
-.message-row.user .bubble { background: var(--user-bubble); color: var(--user-ink); border-color: transparent; border-radius: 16px 4px 16px 16px; box-shadow: var(--shadow-sm); }
+.bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 11px 15px; font-size: 14.5px; line-height: 1.78; letter-spacing: .01em; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--shadow-sm); width: fit-content; max-width: 100%; }
+.message-row.user .bubble { background: var(--user-bubble); color: var(--user-ink); border-color: transparent; border-radius: 18px; box-shadow: var(--shadow-sm); }
 .bubble.redacted { color: var(--faint); font-style: italic; background: var(--panel-soft); border-style: dashed; }
 .message-time { font-size: 10.5px; color: var(--faint); padding: 0 5px; }
 .message-row.user .message-time { text-align: right; }
@@ -564,3 +569,34 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .diagnostics-details[open] summary { margin-bottom: 10px; }
 .diagnostics-details .diagnostics-grid { margin-top: 12px; }
 .advanced-profiles input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 12px; font-size: 13px; color: var(--ink); outline: none; }
+
+/* ── 消息右键菜单 ─────────────────────────── */
+.context-menu { position: fixed; z-index: 95; min-width: 176px; padding: 5px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+  box-shadow: var(--shadow-lg); animation: ctx-in 130ms var(--ease) both; }
+@keyframes ctx-in { from { opacity: 0; transform: scale(.96) translateY(3px); } to { opacity: 1; transform: none; } }
+.context-menu button { display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 11px; border-radius: 8px; font-size: 13px; color: var(--ink-soft);
+  text-align: left; transition: background var(--dur-fast), color var(--dur-fast); }
+.context-menu button:hover { background: var(--accent-soft); color: var(--accent-deep); }
+.context-menu button.danger { color: var(--danger-ink); }
+.context-menu button.danger:hover { background: var(--danger-soft); }
+.context-menu .ctx-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.context-menu kbd { margin-left: auto; font-size: 10px; }
+
+/* ── 引用回复条 ───────────────────────────── */
+.reply-bar { width: min(var(--content-width), calc(100% - 40px)); margin: 0 auto 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--panel); border: 1px solid var(--accent-border); border-radius: 13px;
+  padding: 8px 12px; box-shadow: var(--shadow-sm); animation: ctx-in 140ms var(--ease) both; }
+.reply-bar-label { color: var(--accent-deep); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; }
+.reply-preview { flex: 1; min-width: 0; color: var(--muted); font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-cancel { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--faint); font-size: 10px; transition: background var(--dur-fast), color var(--dur-fast); }
+.reply-cancel:hover { background: var(--hover); color: var(--ink); }
+/* 气泡内的引用块 */
+.quote-block { border-left: 3px solid var(--accent-border); background: var(--panel-soft);
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: 12.5px;
+  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: 3.6em; overflow-y: hidden; }

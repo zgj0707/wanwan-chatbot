@@ -35,6 +35,9 @@
     views: [...document.querySelectorAll("#settings-overlay .view")],
     chatScroll: document.getElementById("chat-scroll"),
     messages: document.getElementById("messages"),
+    contextMenu: document.getElementById("context-menu"),
+    replyBar: document.getElementById("reply-bar"),
+    replyPreview: document.getElementById("reply-preview"),
     scrollBottom: document.getElementById("scroll-bottom"),
     pending: document.getElementById("pending-area"),
     form: document.getElementById("composer"),
@@ -1456,13 +1459,17 @@
       return;
     }
     let lastDayKey = "";
+    let lastRole = "";
     if (nextBeforeId) appendLoadEarlier();
     for (const item of items) {
       const dayKey = dayDividerLabel(item.created_at);
       if (dayKey && dayKey !== lastDayKey) {
         els.messages.append(make("div", "day-divider", dayKey));
         lastDayKey = dayKey;
+        lastRole = "";
       }
+      item._groupStart = item.role !== lastRole;
+      lastRole = item.role;
       appendMessage(item);
     }
     scrollToBottom();
@@ -1503,9 +1510,77 @@
       loadEarlierBusy = false;
     }
   }
-  function appendMessage(message, prepend = false) {
+  /* ── 消息右键菜单与引用回复 ─────────────────── */
+  let replyTarget = null;
+  function setReplyTarget(message) {
+    replyTarget = message || null;
+    if (!message) {
+      els.replyBar.classList.add("hidden");
+      els.replyPreview.textContent = "";
+      return;
+    }
+    els.replyPreview.textContent = `${message.role === "user" ? "我" : "晚晚"}：${(message.content || "").slice(0, 60)}`;
+    els.replyBar.classList.remove("hidden");
+    els.input.focus();
+  }
+  function openContextMenu(x, y, message) {
+    const menu = els.contextMenu;
+    menu.replaceChildren();
+    const add = (label, handler, options = {}) => {
+      const button = make("button", options.danger ? "danger" : "", label);
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.addEventListener("click", () => { closeContextMenu(); handler(); });
+      menu.append(button);
+    };
+    const separator = () => menu.append(make("div", "ctx-sep"));
+    const isUser = message.role === "user";
+    if (!isUser) add("回复", () => setReplyTarget(message));
+    add("复制", async () => {
+      try { await navigator.clipboard.writeText(message.content || ""); toastSuccess("已复制到剪贴板。", { duration: 1600 }); }
+      catch { toastError("浏览器拒绝了剪贴板访问。", { duration: 4000 }); }
+    });
+    if (!isUser) add("收藏素材", () => openMaterialPicker(message, null));
+    if (isUser) {
+      add("编辑重发", () => {
+        els.input.value = message.content || "";
+        resizeInput();
+        els.input.focus();
+      });
+    }
+    separator();
+    add(isUser ? "删除此消息（本地隐藏）" : "删除此消息（本地隐藏）", () => {
+      const row = els.messages.querySelector(`[data-msg-id="${message.id}"]`);
+      if (row) row.remove();
+      toastWarn("已在本页隐藏这条消息（数据库保留）。", { duration: 3200 });
+    }, { danger: true });
+    menu.classList.remove("hidden");
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(x, window.innerWidth - rect.width - 10);
+    const top = Math.min(y, window.innerHeight - rect.height - 10);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+    const first = menu.querySelector("button");
+    if (first) first.focus();
+  }
+  function closeContextMenu() {
+    els.contextMenu.classList.add("hidden");
+  }
+  document.addEventListener("click", (event) => {
+    if (!els.contextMenu.classList.contains("hidden") && !els.contextMenu.contains(event.target)) closeContextMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeContextMenu();
+  });
+  window.addEventListener("blur", closeContextMenu);
+  window.addEventListener("resize", closeContextMenu);
+
+  function appendMessage(message, prepend = false, groupStart = true) {
     const user = message.role === "user";
-    const row = make("div", `message-row ${user ? "user" : "assistant"}`);
+    const row = make("div", `message-row ${user ? "user" : "assistant"}${groupStart ? " group-start" : ""}`);
+    row.dataset.msgId = message.id || "";
+    row.dataset.role = message.role;
+    row.dataset.content = message.content || "";
     if (!user) {
       const avatarNode = make("span", "avatar life", "");
       const img = document.createElement("img");
@@ -1521,7 +1596,7 @@
     if (message.created_at) timeNode.dateTime = message.created_at;
     timeNode.title = message.created_at ? new Date(message.created_at).toLocaleString("zh-CN") : "";
     authorRow.append(timeNode);
-    body.append(authorRow);
+    if (!user || groupStart) body.append(authorRow);
     const bubble = make("div", `bubble${message.redacted ? " redacted" : ""}`, message.redacted ? "此条内容已因忘记操作移除" : (message.content || ""));
     body.append(bubble);
     if (!user && !message.redacted && /年糕|猫/.test(message.content || "")) {
@@ -1555,6 +1630,11 @@
     }
     if (user) row.append(make("span", "avatar user-avatar", "我"));
     row.append(body);
+    row.addEventListener("contextmenu", (event) => {
+      if (message.redacted) return;
+      event.preventDefault();
+      openContextMenu(event.clientX, event.clientY, message);
+    });
     if (prepend && els.messages.firstElementChild) els.messages.insertBefore(row, els.messages.firstElementChild);
     else els.messages.append(row);
     if (!prepend) {
@@ -1804,7 +1884,15 @@
     const text = els.input.value.trim();
     if (!text) return;
     if (text.length > 2000) toastWarn(`这条消息有 ${text.length} 字，超过 2000 上限，已截断发送。`, { duration: 5000 });
-    pending = { operation_id: crypto.randomUUID(), session_id: activeSessionId, text, status: "pending", error: null };
+    let finalText = text;
+    if (replyTarget) {
+      const quoted = (replyTarget.content || "").slice(0, 120);
+      finalText = `【回复 ${(replyTarget.role === "user" ? "我" : "晚晚")}】${quoted}
+
+${text}`;
+      setReplyTarget(null);
+    }
+    pending = { operation_id: crypto.randomUUID(), session_id: activeSessionId, text: finalText, status: "pending", error: null };
     savePending();
     els.input.value = "";
     resizeInput();
@@ -1823,6 +1911,7 @@
   }
 
   /* ── 事件绑定 ─────────────────────────────── */
+  document.getElementById("cancel-reply")?.addEventListener("click", () => setReplyTarget(null));
   els.form.addEventListener("submit", (event) => { event.preventDefault(); void submit(); });
   els.send.addEventListener("click", (event) => {
     if (isWaiting || polling) { event.preventDefault(); cancelWait(); }
