@@ -7,7 +7,7 @@
   <title>苏晚晚</title>
   <link rel="stylesheet" href="/ui/style.css">
   <link rel="stylesheet" href="/ui/life.css">
-  <meta name="ui-build" content="2026-10-09-p1">
+  <meta name="ui-build" content="2026-10-09-p2">
 </head>
 <body>
   <!-- SUWAN_BOOTSTRAP -->
@@ -171,11 +171,6 @@
       <section id="diagnostics-view" class="view management-view hidden" aria-label="设置与诊断">
         <header class="management-header"><h1>设置与诊断</h1><p>「测试连通性」会向对应配置发送一次短请求并可能产生少量费用；测试读取的是已保存的本机配置，保存后无需重启即可测试。</p></header>
         <div id="diagnostics-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
-        <div id="diagnostics-summary" class="diagnostics-grid"></div>
-        <section class="panel-card">
-          <div class="section-title"><h2>最近模型调用</h2><button id="refresh-diagnostics" class="text-button" type="button">刷新</button></div>
-          <div id="diagnostics-calls" class="table-wrap"></div>
-        </section>
         <section class="panel-card" id="api-settings-card">
           <div class="section-title"><h2>模型 API</h2><span id="api-key-status" class="count-badge">未配置</span></div>
           <p class="api-note">填好这三样，晚晚就能开口说话：接口地址、模型名、API 密钥。密钥只保存在本机 <code>config.yaml</code> 与 <code>.env</code>（均在 .gitignore 中，不会进入 Git），页面不显示也不回传密钥明文。</p>
@@ -219,6 +214,15 @@
             <div id="ccswitch-list" class="ccswitch-list"></div>
           </div>
         </section>
+
+        <details class="advanced-profiles diagnostics-details">
+          <summary>运行状态与诊断（平时不用管）</summary>
+          <div id="diagnostics-summary" class="diagnostics-grid"></div>
+          <section class="panel-card">
+            <div class="section-title"><h2>最近模型调用</h2><button id="refresh-diagnostics" class="text-button" type="button">刷新</button></div>
+            <div id="diagnostics-calls" class="table-wrap"></div>
+          </section>
+        </details>
 
         <section class="panel-card" id="weather-settings-card">
           <div class="section-title"><h2>天气氛围</h2><span id="weather-status" class="count-badge">关闭</span></div>

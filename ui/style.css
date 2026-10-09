@@ -560,4 +560,7 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .advanced-profiles { margin: 8px 0; }
 .advanced-profiles summary { font-size: 12px; color: var(--muted); cursor: pointer; }
 .advanced-profiles label { display: block; margin: 8px 0 4px; font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.diagnostics-details { margin: 14px 0; }
+.diagnostics-details[open] summary { margin-bottom: 10px; }
+.diagnostics-details .diagnostics-grid { margin-top: 12px; }
 .advanced-profiles input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 12px; font-size: 13px; color: var(--ink); outline: none; }
