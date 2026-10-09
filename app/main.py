@@ -179,21 +179,25 @@ def create_app(
         page = page.replace("<!-- SUWAN_BOOTSTRAP -->", f'<script id="suwan-bootstrap" type="application/json">{bootstrap}</script>')
         return HTMLResponse(page)
 
+    # 前端文件不加缓存头时浏览器会长期使用旧副本，改版后界面看起来"没变化"；
+    # no-cache 让浏览器每次都回源校验，文件一更新普通刷新即可拿到新版。
+    static_cache = {"Cache-Control": "no-cache"}
+
     @app.get("/ui/style.css", include_in_schema=False)
     def styles() -> FileResponse:
-        return FileResponse(ui_dir / "style.css", media_type="text/css")
+        return FileResponse(ui_dir / "style.css", media_type="text/css", headers=static_cache)
 
     @app.get("/ui/life.css", include_in_schema=False)
     def life_styles() -> FileResponse:
-        return FileResponse(ui_dir / "life.css", media_type="text/css")
+        return FileResponse(ui_dir / "life.css", media_type="text/css", headers=static_cache)
 
     @app.get("/ui/app.js", include_in_schema=False)
     def script() -> FileResponse:
-        return FileResponse(ui_dir / "app.js", media_type="text/javascript")
+        return FileResponse(ui_dir / "app.js", media_type="text/javascript", headers=static_cache)
 
     @app.get("/ui/assets/avatar.png", include_in_schema=False)
     def avatar_image() -> FileResponse:
-        return FileResponse(ui_dir / "assets" / "avatar.png", media_type="image/png")
+        return FileResponse(ui_dir / "assets" / "avatar.png", media_type="image/png", headers=static_cache)
 
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     def settings() -> HTMLResponse:
