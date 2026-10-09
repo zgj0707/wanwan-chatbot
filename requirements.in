@@ -7,3 +7,4 @@ python-dotenv
 tzdata
 pytest
 httpx
+pywebview
