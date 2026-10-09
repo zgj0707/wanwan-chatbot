@@ -30,6 +30,7 @@ from app.models import (
     SessionArchiveRequest,
     SessionCreateRequest,
     WorldAdvanceRequest,
+    MessageRetractRequest,
     WorldEventRetractRequest,
     WorldThreadControlRequest,
 )
@@ -474,6 +475,37 @@ def advance_world(payload: WorldAdvanceRequest, request: Request) -> dict:
             raise problem_for_code("APP_BUSY") from exc
         if isinstance(exc, WorldDataCorrupt):
             raise problem_for_code("DATA_CORRUPT") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+
+
+@router.post("/messages/{message_id}/retract")
+def retract_message(message_id: str, payload: MessageRetractRequest, request: Request) -> dict:
+    repository = request.app.state.repository
+    try:
+        parsed = UUID(message_id)
+        if parsed.version != 4 or str(parsed) != message_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise APIProblem(422, "VALIDATION_ERROR", "message_id 必须是 UUID4。") from exc
+    try:
+        with mutation_guard():
+            return repository.retract_user_message(message_id, now=repository.clock.now())
+    except ValueError as exc:
+        raise APIProblem(422, "VALIDATION_ERROR", "message_id 必须是 UUID4。") from exc
+    except LookupError as exc:
+        raise problem_for_code("MESSAGE_NOT_FOUND") from exc
+    except PermissionError as exc:
+        detail = str(exc)
+        if "window" in detail:
+            raise APIProblem(409, "RETRACT_WINDOW_EXPIRED", "超过 10 分钟的消息不能撤回。") from exc
+        if "already" in detail:
+            raise APIProblem(409, "MESSAGE_ALREADY_RETRACTED", "这条消息已经撤回过了。") from exc
+        raise APIProblem(403, "RETRACT_FORBIDDEN", "只能撤回自己发送的消息。") from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
         raise problem_for_code("DATABASE_ERROR") from exc
 
 

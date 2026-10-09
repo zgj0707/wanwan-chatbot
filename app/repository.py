@@ -20,6 +20,7 @@ from app.memory import (
     validate_fact_value,
 )
 from app.persona import PersonaDataUnavailable, PersonaPolicyError, apply_persona_proposal, load_persona_snapshot
+from app.state import parse_db_datetime
 
 
 INITIAL_LIFE_THREADS = (
@@ -1407,6 +1408,40 @@ class Repository:
             retracted = connection.execute("SELECT * FROM world_events WHERE id = ?", (event_id,)).fetchone()
             assert restored is not None and retracted is not None
             return {"event": dict(retracted), "thread": dict(restored), "redacted_message_count": changed}
+
+    def retract_user_message(self, message_id: str, *, now: datetime) -> dict:
+        """撤回用户最近发送的一条消息：置 redacted，她不再看到该轮内容。
+
+        只允许撤回自己最近 10 分钟内的 user 消息；已被移除的不能再撤。
+        """
+        _validate_uuid4(message_id, "message_id")
+        timestamp = to_utc_iso(now)
+        with self.transaction() as connection:
+            row = connection.execute(
+                "SELECT id, session_id, role, content, redacted, created_at FROM messages WHERE id = ?",
+                (message_id,),
+            ).fetchone()
+            if row is None:
+                raise LookupError("message not found")
+            if row["role"] != "user":
+                raise PermissionError("only user messages can be retracted")
+            if row["redacted"] or row["content"] is None:
+                raise PermissionError("message is already retracted")
+            created = parse_db_datetime(row["created_at"])
+            age_seconds = (parse_db_datetime(timestamp) - created).total_seconds()
+            if age_seconds > 600:
+                raise PermissionError("retract window has expired")
+            connection.execute(
+                "UPDATE messages SET content = NULL, redacted = 1 WHERE id = ?",
+                (message_id,),
+            )
+            return {
+                "id": message_id,
+                "session_id": row["session_id"],
+                "retracted": True,
+                "created_at": row["created_at"],
+                "retracted_at": timestamp,
+            }
 
     def record_call_metric(self, metric: CallMetric) -> None:
         """Persist call metadata in its own short transaction; never store prompt text."""
