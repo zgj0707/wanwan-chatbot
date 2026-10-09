@@ -8,3 +8,4 @@ tzdata
 pytest
 httpx
 pywebview
+pillow
