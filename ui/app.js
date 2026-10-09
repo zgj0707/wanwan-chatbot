@@ -166,7 +166,55 @@
     const dateText = new Intl.DateTimeFormat("zh-CN", {
       timeZone: "Asia/Shanghai", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
     }).format(new Date());
-    els.time.textContent = `广州 · ${dateText}`;
+    els.time.textContent = `广州 · ${dateText}${weatherBrief ? ` · ${weatherBrief}` : ""}`;
+  }
+  /* 天气氛围：拉取失败一律静默——特效和顶栏缀词都不构成功能 */
+  let weatherBrief = "";
+  async function loadWeatherAmbience() {
+    let view;
+    try {
+      const { data } = await request("/weather");
+      if (!data?.available) return;
+      view = data;
+    } catch {
+      return;
+    }
+    const condition = String(view.condition || "");
+    const temperature = typeof view.temperature === "number" ? `${Math.round(view.temperature)}°` : "";
+    weatherBrief = [condition, temperature].filter(Boolean).join(" ");
+    const kind = view.snowy ? "snow" : view.rainy ? "rain" : "clear";
+    document.body.dataset.weather = kind;
+    renderWeatherLayer(kind);
+    updateClock();
+  }
+  function renderWeatherLayer(kind) {
+    const layer = document.querySelector(".weather-layer");
+    if (!layer) return;
+    layer.replaceChildren();
+    if (kind === "rain" || kind === "snow") {
+      const count = kind === "rain" ? 46 : 26;
+      for (let index = 0; index < count; index += 1) {
+        const drop = make("span", kind === "rain" ? "rain-drop" : "snow-flake");
+        drop.style.left = `${Math.random() * 100}%`;
+        if (kind === "rain") {
+          drop.style.animationDuration = `${0.9 + Math.random() * 0.7}s`;
+          drop.style.animationDelay = `${Math.random() * 1.6}s`;
+          drop.style.opacity = String(0.35 + Math.random() * 0.4);
+        } else {
+          const size = 3 + Math.random() * 4;
+          drop.style.width = `${size}px`;
+          drop.style.height = `${size}px`;
+          drop.style.animationDuration = `${7 + Math.random() * 6}s`;
+          drop.style.animationDelay = `${Math.random() * 8}s`;
+          drop.style.opacity = String(0.3 + Math.random() * 0.5);
+        }
+        layer.append(drop);
+      }
+    }
+    if (weatherBrief) {
+      const note = make("span", "weather-note", `窗外 ${weatherBrief}`);
+      layer.append(note);
+    }
   }
   /* 统一取「按 DISPLAY_TZ 换算后的日历天」，用于消息时间与日期分隔。
      注意：Intl 的 timeZone 只接受 IANA 时区名，不能传 Date 对象。 */
@@ -2027,6 +2075,7 @@
   try { applyRail(localStorage.getItem(railKey) === "1"); } catch { applyRail(false); }
   updateClock();
   setInterval(updateClock, 60_000);
+  loadWeatherAmbience();
   syncSearchClear();
   resizeInput();
   (async () => {
