@@ -7,7 +7,7 @@
   <title>苏晚晚</title>
   <link rel="stylesheet" href="/ui/style.css">
   <link rel="stylesheet" href="/ui/life.css">
-  <meta name="ui-build" content="2026-10-09-p3">
+  <meta name="ui-build" content="2026-10-09-p4">
 </head>
 <body>
   <!-- SUWAN_BOOTSTRAP -->
@@ -250,6 +250,15 @@
           </div>
           <div class="settings-actions"><button id="save-weather-settings" class="primary-button" type="button">保存天气设置</button></div>
           <p id="weather-settings-notice" class="manager-notice hidden" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="panel-card" id="background-settings-card">
+          <div class="section-title"><h2>聊天背景</h2><span class="count-badge" id="background-status">默认</span></div>
+          <p class="api-note">上传一张本机图片当聊天背景（只存本机浏览器，不上传服务器）。建议 8MB 以内的横图。右下角的"窗外"天气注记会照常显示。</p>
+          <div class="settings-actions">
+            <button id="pick-background" class="secondary-button" type="button">选择图片…</button>
+            <button id="clear-background" class="text-button" type="button">恢复默认</button>
+          </div>
         </section>
 
         <section class="panel-card">

@@ -240,6 +240,10 @@ class WorldEventRetractRequest(StrictModel):
     pass
 
 
+class MessageRetractRequest(StrictModel):
+    pass
+
+
 class WorldThreadControlRequest(StrictModel):
     action: Literal["pause", "resume", "restart"]
 
