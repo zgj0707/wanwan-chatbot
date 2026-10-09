@@ -52,8 +52,10 @@ class LLMProfile(StrictConfigModel):
     model: StrictStr = Field(min_length=1, max_length=200)
     api_key_env: StrictStr = Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]*$")
     temperature: float = Field(ge=0.0, le=1.0)
-    max_tokens: StrictInt = Field(ge=1, le=1000)
-    timeout_seconds: StrictInt = Field(ge=1, le=20)
+    # 推理型模型（deepseek/glm 系）会先在 reasoning 里花掉大量 token，
+    # max_tokens 必须给思考留余量，否则 content 为空。
+    max_tokens: StrictInt = Field(ge=1, le=8000)
+    timeout_seconds: StrictInt = Field(ge=1, le=60)
     json_mode: StrictBool
     input_budget_units: StrictInt = Field(ge=1000, le=16000)
 
