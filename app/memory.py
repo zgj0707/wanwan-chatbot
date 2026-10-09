@@ -81,6 +81,20 @@ def canonical_fact_hash(key: str, value: str) -> str:
     return hashlib.sha256(f"{key}|{normalized}".encode("utf-8")).hexdigest()
 
 
+def _match_sensitive_pattern(text: str) -> str | None:
+    """返回命中的敏感信息类别名（用户可读），未命中返回 None。"""
+    labels = (
+        ("邮箱地址", 0),
+        ("电话号码", 1),
+        ("敏感词（密码、证件、账户、住址、公司、健康医疗等）", 2),
+        ("详细住址", 3),
+    )
+    for label, index in labels:
+        if _SENSITIVE_PATTERNS[index].search(text):
+            return label
+    return None
+
+
 def validate_fact_value(key: str, value: str) -> tuple[str, str]:
     if key not in FACT_KEYS:
         raise MemoryValidationError("unsupported fact key")
@@ -94,8 +108,11 @@ def validate_fact_value(key: str, value: str) -> tuple[str, str]:
         for character in unicodedata.normalize("NFKC", cleaned)
         if unicodedata.category(character) not in {"Cf", "Cc"}
     )
-    if any(pattern.search(privacy_probe) for pattern in _SENSITIVE_PATTERNS):
-        raise MemoryValidationError("fact value contains disallowed private information")
+    sensitive_label = _match_sensitive_pattern(privacy_probe)
+    if sensitive_label is not None:
+        raise MemoryValidationError(
+            f"fact value contains disallowed private information: {sensitive_label}"
+        )
     if key == "profile.birthday":
         try:
             month_text, day_text = cleaned.split("-")
