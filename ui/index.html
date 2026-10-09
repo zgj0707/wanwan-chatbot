@@ -65,6 +65,14 @@
 
       <section id="pending-area" class="pending-area" aria-live="polite"></section>
 
+      <div id="reply-bar" class="reply-bar hidden">
+        <div class="reply-bar-body">
+          <span class="reply-bar-label">回复</span>
+          <span id="reply-preview" class="reply-preview"></span>
+        </div>
+        <button id="cancel-reply" class="reply-cancel" type="button" aria-label="取消回复">✕</button>
+      </div>
+
       <form id="composer" class="composer">
         <textarea id="message-input" rows="1" maxlength="2000" placeholder="说点什么吧…（Enter 发送，Shift+Enter 换行）"></textarea>
         <div class="composer-footer">
@@ -267,6 +275,7 @@
   </dialog>
 
   <div id="toast-layer" class="toast-layer" role="region" aria-label="运行提示"></div>
+  <div id="context-menu" class="context-menu hidden" role="menu" aria-label="消息操作"></div>
 
   <div id="shortcut-sheet" class="shortcut-sheet hidden" role="dialog" aria-modal="true" aria-label="键盘快捷键">
     <div class="shortcut-card">
