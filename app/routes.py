@@ -234,13 +234,30 @@ def list_memory(
     return {"items": items, "total": total}
 
 
+def _fact_value_problem(exc: MemoryValidationError) -> APIProblem:
+    """把校验失败的原因翻译成用户能看懂的提示；敏感拦截额外给出改写建议。"""
+    detail = str(exc)
+    if "disallowed private information" in detail:
+        label = detail.split(": ", 1)[-1] if ": " in detail else "敏感信息"
+        hint = f"记忆内容包含{label}，这类信息不能存进记忆，请换个不含它的说法。"
+    elif "1 to 120 characters" in detail:
+        hint = "记忆内容需要 1 到 120 个字。"
+    elif "valid MM-DD date" in detail:
+        hint = "生日要按 月-日 的格式填写，例如 03-14。"
+    elif "unsupported fact key" in detail:
+        hint = "这条记忆的类型不受支持。"
+    else:
+        hint = "记忆内容不符合允许范围，请调整后重试。"
+    return APIProblem(422, "FACT_VALUE_INVALID", hint)
+
+
 @router.post("/memory")
 def create_memory(payload: MemoryCreateRequest, request: Request):
     repository = request.app.state.repository
     try:
         value, _ = validate_fact_value(payload.key, payload.value)
     except MemoryValidationError as exc:
-        raise problem_for_code("FACT_VALUE_INVALID") from exc
+        raise _fact_value_problem(exc) from exc
     try:
         with mutation_guard():
             fact, created = repository.add_manual_fact(payload.key, value)
@@ -263,12 +280,12 @@ def edit_memory(fact_id: str, payload: MemoryEditRequest, request: Request):
         value, _ = validate_fact_value("preference.drink", payload.value)
     except MemoryValidationError as exc:
         # Validate generic length/privacy here; repository revalidates against the immutable fact key.
-        raise problem_for_code("FACT_VALUE_INVALID") from exc
+        raise _fact_value_problem(exc) from exc
     try:
         with mutation_guard():
             fact, _created = repository.edit_manual_fact(fact_id, value)
     except MemoryValidationError as exc:
-        raise problem_for_code("FACT_VALUE_INVALID") from exc
+        raise _fact_value_problem(exc) from exc
     except ValueError as exc:
         raise APIProblem(422, "VALIDATION_ERROR", "fact_id 必须是 UUID4。") from exc
     except LookupError as exc:

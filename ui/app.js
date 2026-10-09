@@ -1551,7 +1551,7 @@
       const pool = moodState?.guard
         ? TYPING_PHRASES.guard
         : (moodState && (moodState.mood === "tired" || moodState.mood === "sad") ? TYPING_PHRASES.tired : TYPING_PHRASES.normal);
-      for (let pawIndex = 0; pawIndex < 3; pawIndex += 1) bubble.append(make("span", "paw"));
+      for (let pawIndex = 0; pawIndex < 3; pawIndex += 1) bubble.append(makeSvg(PAW_SVG, "paw"));
       bubble.append(make("span", "typing-label", pool[Math.floor(Math.random() * pool.length)]));
       waitingBody.append(bubble);
       waiting.append(waitingBody);
