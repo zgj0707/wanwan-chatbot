@@ -287,7 +287,6 @@ def _fixed_messages(
             "guard_until": _iso(state.guard_until),
         },
         "character_time": time.character_time.isoformat(),
-        "display_time": time.display_time.isoformat(),
         "is_late_night": time.is_late_night,
         "activity_scene": time.activity_scene,
         "state_warnings": list(state.warnings),
