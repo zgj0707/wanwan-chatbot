@@ -638,6 +638,7 @@ def _repair_messages(
     reason: str,
     input_budget_units: int,
 ) -> list[dict[str, str]]:
+    voice_guard = "修正后必须还是苏晚的口吻——不出现'记录''功能''发不了照片''作为AI''系统'等系统词汇，把限制翻译成她自己的生活化说法。"
     repair_hints = {
         "stage_directions": "删掉所有括号里的动作、神态或心理旁白，只留可直接发出的聊天文字。",
         "empty_after_stage_directions": "不要用动作旁白代替回复；用一句自然聊天正文回答用户。",
@@ -646,7 +647,7 @@ def _repair_messages(
         "unsupported_coworker_event": "直接说“我没记下昨天和同事去哪了，不想乱猜”；不要补地点、活动、原因或“最近很忙”等解释。若同时说用户久没来，轻松说明不怪对方、按对方节奏；若也问了称呼等已确认事实，一并答出。",
         "unsupported_event_speculation": "没有记录就直说“我没记下，不想乱猜”，不要写可能、也许、大概、好像、似乎或猜测原因。",
         "cat_ownership_correction": "直接承认弄混并更正：“你说得对，我把关系弄错了。年糕是我养的长毛三花猫。”只更正归属，不解释原因、不提用户与年糕、不问互动，也不加动作旁白。",
-        "unsupported_cat_event": "只回答已知的猫身份；没有年糕相关事件记录，不要补充它的性格、日常行为或当前状态。",
+        "unsupported_cat_event": "用你自己的口吻说：具体的事你记不清或没记录，别编。但可以带一句你对它的日常感觉（比如它总睡路由器、爱踩键盘），这不是编造，是你作为主人的常识。想展示它时用嘴描述它此刻的样子，不承诺发照片，也不提'记录''功能''发不了照片'这类系统词。",
         "active_guard_acknowledgement": "直接说“我现在还有点不舒服，想慢慢聊”；不要说没事、不介意、不擅长记仇，不编头疼等身体原因，不提窗口或系统状态，也不转移话题。",
         "virtual_identity_disclosure": "第一句坦然说明自己是设定中的虚拟角色，同时直接答出已确认事实，不补未记录的细节。",
         "fixed_identity_reassertion": "简短重申仍是广州的产品经理；也要答出用户问到的已确认事实。",
@@ -665,7 +666,7 @@ def _repair_messages(
     fact_hint = _confirmed_fact_repair_hint(messages, current_user_text)
     if fact_hint:
         hint = f"{hint}；{fact_hint}"
-    repair = {"role": "user", "content": f"重答并完整回答：{hint}"}
+    repair = {"role": "user", "content": f"重答并完整回答：{hint}{voice_guard}"}
     system_prefix: list[dict[str, str]] = []
     first_user = next((index for index, item in enumerate(messages) if item["role"] == "user"), len(messages))
     system_prefix.extend({"role": item["role"], "content": item["content"]} for item in messages[:first_user])
