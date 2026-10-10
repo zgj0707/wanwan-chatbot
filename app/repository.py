@@ -1409,6 +1409,125 @@ class Repository:
             assert restored is not None and retracted is not None
             return {"event": dict(retracted), "thread": dict(restored), "redacted_message_count": changed}
 
+    def upsert_goal(self, *, title: str, horizon: str, detail: str | None, status: str, now: datetime) -> str:
+        """创建或更新人物目标（幂等 by title among active/idea）；返回 goal_id。"""
+        timestamp = to_utc_iso(now)
+        with self.transaction() as connection:
+            gid = None
+            existing = connection.execute(
+                "SELECT id FROM character_goals WHERE title = ? AND status IN ('idea', 'active', 'paused')",
+                (title,),
+            ).fetchone()
+            if existing is not None:
+                gid = existing["id"]
+            else:
+                gid = str(uuid4())
+            connection.execute(
+                """INSERT INTO character_goals(id, title, horizon, detail, progress_step, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     title = excluded.title, horizon = excluded.horizon, detail = excluded.detail,
+                     status = excluded.status, updated_at = excluded.updated_at""",
+                (gid, title, horizon, detail, status, timestamp, timestamp),
+            )
+        return gid
+
+    def list_goals(self, *, status: str | None = "active") -> list[dict]:
+        with self.connection() as connection:
+            if status is None:
+                rows = connection.execute("SELECT * FROM character_goals ORDER BY updated_at DESC").fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM character_goals WHERE status = ? ORDER BY updated_at DESC", (status,)
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+    def advance_goal(self, goal_id: str, *, now: datetime) -> dict | None:
+        timestamp = to_utc_iso(now)
+        with self.transaction() as connection:
+            row = connection.execute("SELECT * FROM character_goals WHERE id = ?", (goal_id,)).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                "UPDATE character_goals SET progress_step = progress_step + 1, updated_at = ? WHERE id = ?",
+                (timestamp, goal_id),
+            )
+            updated = connection.execute("SELECT * FROM character_goals WHERE id = ?", (goal_id,)).fetchone()
+            return dict(updated)
+
+    def upsert_commitment(self, *, kind: str, content: str, now: datetime) -> str:
+        timestamp = to_utc_iso(now)
+        with self.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id FROM character_commitments WHERE kind = ? AND content = ?", (kind, content)
+            ).fetchone()
+            if existing is not None:
+                return existing["id"]
+            cid = str(uuid4())
+            connection.execute(
+                "INSERT INTO character_commitments(id, kind, content, created_at) VALUES (?, ?, ?, ?)",
+                (cid, kind, content, timestamp),
+            )
+            return cid
+
+    def list_commitments(self) -> list[dict]:
+        with self.connection() as connection:
+            rows = connection.execute("SELECT * FROM character_commitments ORDER BY created_at").fetchall()
+            return [dict(row) for row in rows]
+
+    def upsert_schedule(self, *, day_type: str, start_time: str, end_time: str, activity: str, now: datetime) -> None:
+        with self.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id FROM character_schedule WHERE day_type = ? AND start_time = ?",
+                (day_type, start_time),
+            ).fetchone()
+            if existing is not None:
+                connection.execute(
+                    "UPDATE character_schedule SET activity = ?, end_time = ? WHERE id = ?",
+                    (activity, end_time, existing["id"]),
+                )
+                return
+            connection.execute(
+                "INSERT INTO character_schedule(id, day_type, start_time, end_time, activity, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (str(uuid4()), day_type, start_time, end_time, activity, to_utc_iso(now)),
+            )
+
+    def list_schedule(self, day_type: str) -> list[dict]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM character_schedule WHERE day_type = ? ORDER BY start_time", (day_type,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def set_current_activity(self, activity: str | None, *, now: datetime) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                "UPDATE character_state SET current_activity = ?, updated_at = ?, version = version + 1 WHERE character_id = 'suwan'",
+                (activity, to_utc_iso(now)),
+            )
+
+    def record_action_intent(self, *, goal_id: str | None, candidates: list[str], chosen: str,
+                             decided_by: str, validation: dict | None, sim_time: datetime, now: datetime) -> str:
+        intent_id = str(uuid4())
+        with self.transaction() as connection:
+            connection.execute(
+                """INSERT INTO action_intents(id, goal_id, candidate_actions, chosen_action, decided_by, validation, status, sim_time, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'executed', ?, ?)""",
+                (intent_id, goal_id, json.dumps(candidates, ensure_ascii=False), chosen, decided_by,
+                 json.dumps(validation or {}, ensure_ascii=False), to_utc_iso(sim_time), to_utc_iso(now)),
+            )
+        return intent_id
+
+    def pending_stale_intents(self, *, older_than_minutes: int, now: datetime) -> int:
+        """崩溃恢复：滞留过久的 pending intent 标记 skipped（不猜测结果）。"""
+        cutoff = to_utc_iso(now - timedelta(minutes=older_than_minutes))
+        with self.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE action_intents SET status = 'skipped' WHERE status = 'pending' AND created_at < ?",
+                (cutoff,),
+            )
+            return cursor.rowcount
+
     def update_attention(self, *, topic: str, current_focus: str | None, disclosure: list[str], now: datetime) -> None:
         """维护注意力单行状态（upsert）；属于第一阶段的注意力解耦。"""
         timestamp = to_utc_iso(now)
