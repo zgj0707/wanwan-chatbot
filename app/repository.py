@@ -1409,6 +1409,26 @@ class Repository:
             assert restored is not None and retracted is not None
             return {"event": dict(retracted), "thread": dict(restored), "redacted_message_count": changed}
 
+    def update_attention(self, *, topic: str, current_focus: str | None, disclosure: list[str], now: datetime) -> None:
+        """维护注意力单行状态（upsert）；属于第一阶段的注意力解耦。"""
+        timestamp = to_utc_iso(now)
+        with self.transaction() as connection:
+            connection.execute(
+                """INSERT INTO attention_state(id, current_focus, topic_hint, disclosure, updated_at)
+                   VALUES (1, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     current_focus = excluded.current_focus,
+                     topic_hint = excluded.topic_hint,
+                     disclosure = excluded.disclosure,
+                     updated_at = excluded.updated_at""",
+                (current_focus, topic, json.dumps(disclosure, ensure_ascii=False), timestamp),
+            )
+
+    def get_attention(self) -> dict | None:
+        with self.connection() as connection:
+            row = connection.execute("SELECT * FROM attention_state WHERE id = 1").fetchone()
+            return dict(row) if row is not None else None
+
     def retract_user_message(self, message_id: str, *, now: datetime) -> dict:
         """撤回用户最近发送的一条消息：置 redacted，她不再看到该轮内容。
 

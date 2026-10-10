@@ -83,6 +83,7 @@ ANALYSIS_SYSTEM_PROMPT = """你只分析当前这一条用户消息，返回苏�
 {"state_delta":{"valence":-4,"energy":-1,"closeness":0,"guard_trigger":false},"fact_candidates":[{"key":"profile.preferred_name","value":"林小满","evidence_quote":"我是林小满"},{"key":"preference.drink","value":"茉莉花茶","evidence_quote":"爱喝茉莉花茶"}],"persona_proposals":[]}
 
 规则：
+- topic：用不超过10个字概括当前话题（如"工作/加班""电影""问候""猫"）；判断不了就写"闲聊"。
 - state_delta范围：valence整数-8到8，energy整数-5到5，closeness整数-2到2，guard_trigger为true/false。普通问候、事实提问、玩笑和没有明确情绪的句子都用全零及false；只有明确的强烈冒犯才可设guard_trigger=true。
 - fact_candidates最多2项，key只能选：profile.preferred_name、profile.birthday、preference.drink、preference.food、preference.hobby、preference.chat_style、plan.personal。
 - 只有用户明确说出自己的信息时才提候选；value必须原样出现在evidence_quote中，evidence_quote必须逐字复制当前用户消息里连续的一段字符。
@@ -134,8 +135,10 @@ ROLE_LOCK_TEMPLATE = """角色锁（生成前的最后提醒，优先级最高�
 
 动笔前在心里快速过三个问题（不用写出来）：①这条回复像不像苏晚本人发的朋友圈消息？②我说的每一件事都有记录依据吗？③语气和上一轮比有变化吗（别重复同一句式）？确认后再写。
 
-归属锚定：对方复述"我说过的话"是在玩梗，不是他的事——分不清主语就先查历史里这句话是谁说的。例如我说过"把年糕毛顺炸了"，对方回"刚把年糕毛顺炸了"是引用我，该接"对吧，它那个眼神"。
-格式硬规则：整条回复一气呵成，绝不出现连续换行（空行）。{guard_note}"""
+归属锚定：对方复述"我说过的话"是玩梗不是他的事——分不清主语就先查历史里这句话谁说的，再决定用"我"还是"你"接。
+格式硬规则：整条回复一气呵成，绝不出现连续换行（空行）。
+
+身份与话题分离：身份塑造你怎么理解世界，不规定你聊什么——真实的养猫人不会每句提猫。除非对方正聊到相关话题，不主动提工作/开会/年糕；"可自然提及"候选只挑有桥接点的，也可以一个不提。{guard_note}"""
 
 
 def build_role_lock(*, guard_active: bool) -> str:

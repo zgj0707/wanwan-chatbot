@@ -15,6 +15,7 @@ from app.memory import MemoryDataUnavailable, retrieve_facts, validate_fact_cand
 from app.models import ChatRequest, InitiativeRequest, PersonaProposal
 from app.prompt import HistoryTurn, PromptDataCorrupt, PromptTooLarge, build_prompt
 from app.repository import Repository, mutation_guard
+from app.attention import build_disclosure, select_relevant
 from app.state import DataCorrupt, apply_analysis_delta, load_state_rows, project_state, time_context
 from app.world import WorldDataCorrupt, build_initiative_messages, evaluate_initiative_reason
 
@@ -268,6 +269,34 @@ def handle_turn(
             if analysis.error_code and "ANALYSIS_DEGRADED" not in warnings:
                 warnings.append("ANALYSIS_DEGRADED")
             persisted_state = apply_analysis_delta(projection, analysis.result.state_delta, now)
+
+            # 注意力层（CLR 一阶段）：话题相关性筛选 + 披露候选 + 状态持久化。
+            # 事实检索已按 user_text 相关性排序；这里只对世界事件做话题过滤。
+            attention_topic = analysis.result.topic or "闲聊"
+            try:
+                attention_facts, attention_events, attention_debug = select_relevant(
+                    topic_hint=attention_topic,
+                    facts=memory_facts,
+                    events=context["events"],
+                    facts_top_k=config.limits.memory_top_k,
+                    world_events_top_k=config.limits.world_events_top_k,
+                )
+            except Exception:
+                attention_facts, attention_events, attention_debug = memory_facts, context["events"], {}
+            disclosure = build_disclosure(
+                topic=attention_topic,
+                events=context["events"],
+                recent_topics=[],
+            )
+            try:
+                repository.update_attention(
+                    topic=attention_topic,
+                    current_focus=None,
+                    disclosure=disclosure,
+                    now=now,
+                )
+            except Exception:
+                warnings.append("MEMORY_UNAVAILABLE")
             fact_candidates = validate_fact_candidates(analysis.result.fact_candidates, request.text)
             if len(fact_candidates) != len(analysis.result.fact_candidates):
                 warnings.append("MEMORY_CANDIDATE_REJECTED")
@@ -297,7 +326,7 @@ def handle_turn(
                     time=local_time,
                     state=projected_for_chat,
                     life_threads=context["threads"],
-                    world_events=context["events"],
+                    world_events=attention_events,
                     facts=memory_facts,
                     history=_history(context["messages"]),
                     user_text=request.text,

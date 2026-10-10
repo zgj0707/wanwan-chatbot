@@ -30,6 +30,7 @@ def _build_v1_database(path: Path) -> None:
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("DROP TABLE attention_state")
         connection.execute("DROP INDEX idx_materials_status_created")
         connection.execute("DROP TABLE materials")
         connection.execute("ALTER TABLE facts DROP COLUMN importance")

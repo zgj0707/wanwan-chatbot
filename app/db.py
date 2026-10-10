@@ -10,7 +10,7 @@ from typing import BinaryIO
 from app.clock import Clock, SystemClock
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MUTATION_LOCK = threading.Lock()
 _registry_lock = threading.Lock()
 _held_paths: set[str] = set()
@@ -32,6 +32,7 @@ REQUIRED_TABLES = frozenset(
         "app_meta",
         "call_metrics",
         "materials",
+        "attention_state",
     }
 )
 REQUIRED_INDEXES = frozenset(
@@ -201,6 +202,15 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE attention_state (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        current_focus TEXT,
+        topic_hint TEXT,
+        disclosure TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE app_meta (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -258,6 +268,21 @@ class SchemaError(RuntimeError):
 # Incremental migrations: {current_version: (target_version, statements)}.
 # Each step only adds structures; existing rows and columns are never rewritten.
 MIGRATIONS: dict[int, tuple[int, tuple[str, ...]]] = {
+    3: (
+        4,
+        (
+            # CLR 一阶段：注意力单行状态（话题筛选与披露选择的持久化载体）
+            """
+            CREATE TABLE attention_state (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                current_focus TEXT,
+                topic_hint TEXT,
+                disclosure TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        ),
+    ),
     1: (
         2,
         (

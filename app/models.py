@@ -92,6 +92,7 @@ class PersonaProposal(StrictModel):
 
 class AnalysisResult(StrictModel):
     state_delta: AnalysisStateDelta
+    topic: StrictStr = Field(default="闲聊", min_length=1, max_length=20)
     fact_candidates: list[FactCandidate] = Field(max_length=2)
     persona_proposals: list[PersonaProposal] = Field(max_length=1)
 
