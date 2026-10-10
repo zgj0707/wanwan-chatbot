@@ -440,6 +440,7 @@ def get_state(request: Request) -> dict:
             character_timezone=config.time.character_timezone,
             display_timezone=config.time.display_timezone,
         )
+        current_activity = character_row["current_activity"] if "current_activity" in character_row.keys() else None
     except (DataCorrupt, TypeError, ValueError) as exc:
         raise problem_for_code("DATA_CORRUPT") from exc
     except Exception as exc:
@@ -450,6 +451,7 @@ def get_state(request: Request) -> dict:
         "late_night": context.is_late_night,
         "scene": context.activity_scene,
         "guard": state.guard_until is not None and state.guard_until > context.character_time,
+        "current_activity": current_activity,
     }
 
 

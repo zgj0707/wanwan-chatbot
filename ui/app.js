@@ -1173,6 +1173,7 @@
       document.body.dataset.guard = state.guard ? "1" : "0";
     }
     if (state && MOOD_BADGES[state.mood]) chips.push(make("span", `mood-badge mood-${state.mood}`, MOOD_BADGES[state.mood]));
+    if (state?.current_activity) chips.push(make("span", "mood-badge activity", state.current_activity));
     if (state?.late_night) chips.push(make("span", "mood-badge late-night", "深夜"));
     if (state?.guard) chips.push(make("span", "mood-badge guard", "需要一点空间"));
     els.moodBadges.replaceChildren(...chips);

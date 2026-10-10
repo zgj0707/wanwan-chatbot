@@ -75,9 +75,11 @@ def test_state_returns_atmosphere_fields_without_numeric_values(client_factory):
 
     body = get_state(client)
 
-    assert set(body) == {"mood", "closeness_level", "late_night", "scene", "guard"}
+    assert set(body) == {"mood", "closeness_level", "late_night", "scene", "guard", "current_activity"}
+    # CLR 二阶段：current_activity 在无日程数据时为 null（键必须存在，供前端渲染）
+    assert body["current_activity"] is None
     for value in body.values():
-        assert isinstance(value, (bool, str))
+        assert value is None or isinstance(value, (bool, str))
     assert body["mood"] == "calm"
     assert body["closeness_level"] == "初识"
     assert body["guard"] is False
