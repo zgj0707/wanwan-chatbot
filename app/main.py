@@ -208,6 +208,10 @@ def create_app(
     def avatar_image() -> FileResponse:
         return FileResponse(ui_dir / "assets" / "avatar.png", media_type="image/png", headers=static_cache)
 
+    @app.get("/ui/assets/avatar-small.png", include_in_schema=False)
+    def avatar_small_image() -> FileResponse:
+        return FileResponse(ui_dir / "assets" / "avatar-small.png", media_type="image/png", headers=static_cache)
+
     mood_background_names = frozenset({
         "sunset-road", "late-night-radio", "cat-sun", "desk-morning", "rainy-window",
     })

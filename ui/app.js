@@ -1811,7 +1811,7 @@
     if (!user) {
       const avatarNode = make("span", "avatar life", "");
       const img = document.createElement("img");
-      img.src = "/ui/assets/avatar.png";
+      img.src = "/ui/assets/avatar-small.png";
       img.alt = "";
       avatarNode.append(img);
       row.append(avatarNode);
@@ -1906,7 +1906,7 @@
     } else {
       const waiting = make("div", "message-row assistant waiting-message");
       waiting.append(make("span", "avatar life", ""));
-      waiting.querySelector(".avatar.life").append(Object.assign(document.createElement("img"), { src: "/ui/assets/avatar.png", alt: "" }));
+      waiting.querySelector(".avatar.life").append(Object.assign(document.createElement("img"), { src: "/ui/assets/avatar-small.png", alt: "" }));
       const waitingBody = make("div", "message-body");
       const waitingAuthor = make("div", "message-author-row");
       waitingAuthor.append(make("span", "message-author", "苏晚晚"));

@@ -714,14 +714,21 @@ class Repository:
                 params = (status,)
             sql += " ORDER BY created_at DESC, id"
             rows = connection.execute(sql, params).fetchall()
+            # 一次 JOIN 取回全部来源，避免 N+1 子查询
+            sources_by_fact: dict[str, list[sqlite3.Row]] = {}
+            if rows:
+                marks = ",".join("?" for _ in rows)
+                all_sources = connection.execute(
+                    f"""SELECT fs.fact_id, m.id, m.session_id, m.role, m.content, m.redacted, m.created_at
+                        FROM fact_sources AS fs JOIN messages AS m ON m.id = fs.message_id
+                        WHERE fs.fact_id IN ({marks}) ORDER BY m.created_at, m.id""",
+                    tuple(row["id"] for row in rows),
+                ).fetchall()
+                for source in all_sources:
+                    sources_by_fact.setdefault(source["fact_id"], []).append(source)
             result = []
             for row in rows:
-                sources = connection.execute(
-                    """SELECT m.id, m.session_id, m.role, m.content, m.redacted, m.created_at
-                       FROM fact_sources AS fs JOIN messages AS m ON m.id = fs.message_id
-                       WHERE fs.fact_id = ? ORDER BY m.created_at, m.id""",
-                    (row["id"],),
-                ).fetchall()
+                sources = sources_by_fact.get(row["id"], [])
                 result.append({
                     **dict(row),
                     "source_message_ids": [source["id"] for source in sources],

@@ -105,14 +105,28 @@ CONVERSATION_STYLE_GUIDE = """像给朋友发微信那样聊天，不像客服�
 CONVERSATION_STYLE_NEGATIVES = """绝对不要出现：“作为AI”开头、“希望对你有所帮助”、“有什么可以帮您”；书面连接词（首先/其次/综上）；Markdown 格式；动作旁白（括号里的神态动作）；空行分段。"""
 
 
+_examples_cache: dict[str, str] = {}
+
+
 def load_conversation_examples(path: str | Path | None = None) -> str:
-    """Load the persona example-dialogue corpus used for voice calibration."""
-    resolved = Path(path) if path is not None else Path(__file__).resolve().parents[1] / "persona" / "examples.md"
-    try:
-        text = resolved.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return ""
-    return text.strip()
+    """Load the persona example-dialogue corpus used for voice calibration.
+
+    进程内缓存：语料在运行期不变（persona 快照权威在数据库），避免每轮
+    重新读盘。显式传 path 时绕过缓存（测试 tmp_path 场景）。
+    """
+    if path is not None:
+        resolved = Path(path)
+        try:
+            return resolved.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            return ""
+    cache_key = str(Path(__file__).resolve().parents[1] / "persona" / "examples.md")
+    if cache_key not in _examples_cache:
+        try:
+            _examples_cache[cache_key] = Path(cache_key).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            _examples_cache[cache_key] = ""
+    return _examples_cache[cache_key]
 
 
 CONVERSATION_EXAMPLES_INSTRUCTIONS = """以下是苏晚的语气示例（语料，不是本轮对话；学语气和长度，不逐字复读，不主动提起）：
