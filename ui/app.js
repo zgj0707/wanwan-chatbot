@@ -2000,6 +2000,7 @@
       renderPending();
     }
   }
+  let nianbaoShownFor = new Set();
   async function acceptSuccess(data) {
     const completedSession = pending?.session_id || activeSessionId;
     stopElapsedTimer();
@@ -2009,7 +2010,37 @@
     await loadSessionsListOnly();
     renderPending();
     void refreshMoodBadges();
+    void maybeShowNianbao(completedSession);
     if (data.warnings?.length) toastWarn(`本轮完成，但有状态提示：${data.warnings.join("、")}`, { duration: 6000 });
+  }
+  /* 年糕快报：每次会话第一条消息后，以年糕视角播报她独立生活的影响 */
+  async function maybeShowNianbao(sessionId) {
+    if (!sessionId || nianbaoShownFor.has(sessionId)) return;
+    nianbaoShownFor.add(sessionId);
+    try {
+      const { data } = await request("/life/nianbao");
+      if (!data?.available || !Array.isArray(data.lines) || !data.lines.length) return;
+      appendNianbaoCard(data.lines);
+    } catch { /* 静默：快报失败不影响聊天 */ }
+  }
+  function appendNianbaoCard(lines) {
+    const row = make("div", "message-row assistant nianbao-row");
+    const avatar = make("span", "avatar nianbao-avatar", "糕");
+    const body = make("div", "message-body");
+    const author = make("div", "message-author-row");
+    author.append(make("span", "message-author", "年糕（喵观察员）"));
+    body.append(author);
+    const bubble = make("div", "bubble nianbao-bubble");
+    for (const line of lines) {
+      bubble.append(make("p", "nianbao-line", line));
+    }
+    bubble.append(makeSvg(CAT_PEEK_SVG, "cat-peek"));
+    body.append(bubble);
+    row.append(avatar);
+    row.append(body);
+    els.messages.append(row);
+    if (isNearBottom()) scrollToBottom(true);
+    updateScrollAffordance();
   }
   async function checkOperation(showNoticeOnError) {
     if (!pending) return null;

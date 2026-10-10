@@ -634,3 +634,10 @@ body[data-custom-bg="1"] .message-row.user .bubble { background: rgba(243, 227, 
 
 /* 她此刻在做什么（CLR 当前活动徽章） */
 .mood-badge.activity { background: var(--accent-soft); color: var(--accent-deep); border: 1px solid var(--accent-border); }
+
+/* ── 年糕快报（喵观察员）───────────────────── */
+.nianbao-row { opacity: 0; animation: message-in 320ms var(--ease) 240ms forwards; }
+.nianbao-avatar { background: linear-gradient(150deg, #e8d5b8, #d4b896); font-size: 13px; }
+.nianbao-bubble { background: var(--panel-soft); border: 1px dashed var(--accent-border); max-width: min(70%, 520px); }
+.nianbao-line { margin: 0 0 6px; }
+.nianbao-line:last-of-type { margin-bottom: 2px; }

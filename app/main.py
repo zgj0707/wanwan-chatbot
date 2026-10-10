@@ -249,6 +249,8 @@ def create_app(
         return {"alive": True, "mode": config.mode, "schema_version": config.schema_version}
 
     app.include_router(api_router)
+    # CLR 展示层路由（她的生活摘要）——life_summary 引用 routes.router 装配
+    from app import life_summary  # noqa: F401
     return app
 
 

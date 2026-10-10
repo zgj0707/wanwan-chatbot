@@ -1535,6 +1535,17 @@ class Repository:
             )
             return cursor.rowcount
 
+    def recent_action_intents(self, *, limit: int = 20) -> list[dict]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """SELECT ai.chosen_action, ai.sim_time, ai.decided_by, ai.status, g.title AS goal_title
+                   FROM action_intents ai LEFT JOIN character_goals g ON g.id = ai.goal_id
+                   WHERE ai.status = 'executed'
+                   ORDER BY ai.sim_time DESC, ai.created_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def update_attention(self, *, topic: str, current_focus: str | None, disclosure: list[str], now: datetime) -> None:
         """维护注意力单行状态（upsert）；属于第一阶段的注意力解耦。"""
         timestamp = to_utc_iso(now)
