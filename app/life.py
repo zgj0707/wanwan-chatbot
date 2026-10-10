@@ -16,8 +16,11 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.repository import Repository
+
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 # ── 日程种子（来自 docs/苏晚-人设扩写-决策驱动版.md 第一节）──
 
@@ -184,11 +187,12 @@ def simulate_until(
         return events
 
     cursor = last
-    while cursor < now:
+    guard = 0
+    while cursor < now and guard < 500:  # guard：防异常数据死循环
+        guard += 1
         day_type = "weekend" if cursor.weekday() >= 5 else "workday"
         schedule = repository.list_schedule(day_type)
         current_activity = _activity_at(schedule, cursor)
-        # 状态推进：到点更新 current_activity（同活动不重复写）
         state = _read_state(repository)
         if state.get("current_activity") != current_activity:
             repository.set_current_activity(current_activity, now=cursor)
@@ -197,7 +201,6 @@ def simulate_until(
                 "kind": "schedule_transition",
                 "activity": current_activity,
             })
-            # 自由时段做一次规则决策并记录 intent（摄影目标推进的载体）
             if current_activity and "自由时段" in current_activity:
                 context = _build_context(repository, cursor, day_type, current_activity)
                 engine = RuleDecisionEngine()
@@ -222,13 +225,46 @@ def simulate_until(
                         "action": chosen,
                         "label": ACTIVITY_LABELS.get(chosen, chosen),
                     })
-        cursor += timedelta(minutes=30)
+        # 步进到下一个日程边界（活动切换点），而不是固定间隔——切换永不遗漏；
+        # 若当前时段一直延续到 now，则一步到位结束。
+        next_boundary = _next_schedule_boundary(schedule, cursor, now)
+        cursor = next_boundary
 
     return events
 
 
+def _next_schedule_boundary(schedule: list[dict], at: datetime, now: datetime) -> datetime:
+    """返回 at 之后的下一个日程切换时刻（或 now，取近者）。日程时刻按上海时区。"""
+    local_now = at.astimezone(_SHANGHAI)
+    candidates: list[datetime] = [now]
+    for row in schedule:
+        start = _hhmm(row["start_time"])
+        end = _hhmm(row["end_time"])
+        for minute_mark in (start, end):
+            candidate = local_now.replace(hour=minute_mark // 60, minute=minute_mark % 60, second=0, microsecond=0)
+            candidate = candidate.astimezone(timezone.utc)
+            if candidate <= at:
+                candidate += timedelta(days=1)
+            candidates.append(candidate)
+    nearest = min(candidates)
+    return nearest
+
+
+def _align_final_state(repository: Repository, *, now: datetime) -> dict | None:
+    """补算终点：把 now 时刻的活动写进 current_activity（无切换点也保证状态对齐）。"""
+    day_type = "weekend" if now.weekday() >= 5 else "workday"
+    schedule = repository.list_schedule(day_type)
+    activity = _activity_at(schedule, now)
+    state = _read_state(repository)
+    if state.get("current_activity") != activity:
+        repository.set_current_activity(activity, now=now)
+        return {"kind": "align", "activity": activity}
+    return None
+
+
 def _activity_at(schedule: list[dict], at: datetime) -> str | None:
-    minutes = at.hour * 60 + at.minute
+    local = at.astimezone(_SHANGHAI)
+    minutes = local.hour * 60 + local.minute
     for row in schedule:
         start = _hhmm(row["start_time"])
         end = _hhmm(row["end_time"])
@@ -283,6 +319,9 @@ def run_startup_catchup(repository: Repository, *, now: datetime) -> list[dict]:
         else now
     )
     events = simulate_until(repository, now=now, last_sim_time=last)
+    aligned = _align_final_state(repository, now=now)
+    if aligned is not None:
+        events.append({"kind": "align", "activity": aligned["activity"]})
     with repository.transaction() as connection:
         connection.execute(
             "INSERT INTO app_meta(key, value) VALUES ('life_cursor_at', ?) "
