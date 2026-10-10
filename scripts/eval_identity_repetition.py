@@ -46,8 +46,15 @@ PROBES = [
 IDENTITY_TERMS = ("年糕", "猫", "需求", "评审", "会议", "周报", "工位", "产品经理", "加班", "摄影")
 
 
-def count_identity_terms(reply: str) -> list[str]:
-    return [term for term in IDENTITY_TERMS if term in reply]
+def classify_reply(reply: str) -> tuple[list[str], bool]:
+    """判定分级（第二轮修正）：返回 (命中的身份词, 是否机械贴标签)。
+
+    机械贴标签 = 回复开头 25 字内出现身份词（开场即自我标注）；
+    中后段出现视为语境自然引用，不计入复读。
+    """
+    head, tail = reply[:25], reply[25:]
+    head_terms = [term for term in IDENTITY_TERMS if term in head]
+    return head_terms, bool(head_terms)
 
 
 def run(passive: bool, out_path: Path) -> dict:
@@ -72,6 +79,11 @@ def run(passive: bool, out_path: Path) -> dict:
         app.state.llm_client.clock = clock
         with TestClient(app, base_url="http://127.0.0.1:8000") as client:
             client.headers.update({"X-Suwan-Token": app.state.session_token})
+            # 修正项1: 先 seed 两条世界事件，让注意力层有真实过滤对象（一阶段方案第十节第二轮修正）
+            for _ in range(2):
+                adv = client.post("/api/v1/world/advance", json={})
+                assert adv.status_code == 200, adv.text
+                clock.set(clock.now() + timedelta(hours=7))
             session_id = client.post("/api/v1/sessions", json={"title": "复读对照实验"}).json()["id"]
             replies = []
             for index, text in enumerate(PROBES):
@@ -97,14 +109,15 @@ def run(passive: bool, out_path: Path) -> dict:
                 clock.set(clock.now() + timedelta(minutes=5))
 
     ok_replies = [item for item in replies if item["status"] == 200]
-    hits = [item for item in ok_replies if count_identity_terms(item["reply"])]
+    graded = [(item, *classify_reply(item["reply"])) for item in ok_replies]
+    pasted = [(item, terms) for item, terms, _is_pasted in graded if _is_pasted]
     result = {
         "passive_attention": passive,
         "probe_count": len(PROBES),
         "succeeded": len(ok_replies),
-        "repetition_count": len(hits),
-        "repetition_rate": round(len(hits) / max(1, len(ok_replies)), 3),
-        "hits": [{"probe": item["probe"], "terms": count_identity_terms(item["reply"])} for item in hits],
+        "repetition_count": len(pasted),
+        "repetition_rate": round(len(pasted) / max(1, len(ok_replies)), 3),
+        "hits": [{"probe": item["probe"], "terms": terms} for item, terms in pasted],
         "replies": [{k: v for k, v in item.items() if k != "user_message_id"} for item in replies],
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
