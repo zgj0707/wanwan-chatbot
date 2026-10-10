@@ -32,7 +32,14 @@ def life_summary(request: Request) -> dict:
         for row in schedule:
             start = _hhmm(row["start_time"])
             end = _hhmm(row["end_time"])
-            if minutes_now >= end:
+            if end <= start:  # 跨午夜段（如 23:30-07:10）
+                if minutes_now >= end and minutes_now < start:
+                    state = "past"
+                elif minutes_now >= start or minutes_now < end:
+                    state = "current"
+                else:
+                    state = "upcoming"
+            elif minutes_now >= end:
                 state = "past"
             elif minutes_now >= start:
                 state = "current"
@@ -115,6 +122,13 @@ _SCHEDULE_TONE = {
     "通勤": ("一大早就挤地铁去了", "本喵还在被窝里"),
     "陪年糕": ("回家陪本喵了", "本喵勉为其难地蹭了她一下"),
     "拍照": ("背着相机出门溜达", "本喵在窗边目送"),
+    "赖床": ("赖床赖到本喵都看不下去了", "本喵用尾巴扫她脸叫服务，无效"),
+    "磨蹭": ("磨磨蹭蹭一上午才吃上第一顿", "本喵饿的呼噜声她装没听见"),
+    "老电影": ("看老电影看一半睡着了", "本喵接手了她的暖腿位"),
+    "手冲": ("又摆弄她的手冲家伙事儿了", "十次里六七次，本喵都替豆子心疼"),
+    "画画": ("窝着画画没理本喵", "本喵踩了两脚画纸表示抗议"),
+    "外卖": ("点的又是那几样外卖", "黄焖鸡的味道本喵都背下来了"),
+    "睡觉": ("睡觉去了", "本喵负责夜巡"),
 }
 
 

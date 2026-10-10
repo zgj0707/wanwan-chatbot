@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
@@ -86,6 +87,21 @@ def create_app(
             initialize_database(database_path, clock=repository.clock)
             repository.recover_pending_operations()
             # CLR 二阶段：日程/目标/承诺种子 + 生活时间线补算（纯规则，零 LLM 调用）
+            life_timer_stop = threading.Event()
+
+            def _life_tick() -> None:
+                try:
+                    from app.life import run_startup_catchup
+
+                    run_startup_catchup(repository, now=repository.clock.now())
+                except Exception:
+                    pass  # 生活推进失败不阻塞应用
+
+            def _life_timer() -> None:
+                # 独立时钟唤醒（方案 Step 2.1）：应用开着，她的生活就一直推进
+                while not life_timer_stop.wait(timeout=1800):
+                    _life_tick()
+
             try:
                 from app.life import run_startup_catchup, seed_goals, seed_schedule
 
@@ -94,6 +110,7 @@ def create_app(
                 app.state.startup_life_events = run_startup_catchup(repository, now=repository.clock.now())
             except Exception:
                 app.state.startup_life_events = []
+            threading.Thread(target=_life_timer, daemon=True, name="clr-life-timer").start()
             app.state.repository = repository
             if config.limits.auto_world_update:
                 try:
@@ -114,6 +131,10 @@ def create_app(
                 }
             yield
         finally:
+            try:
+                life_timer_stop.set()
+            except Exception:
+                pass
             instance_lock.release()
 
     app = FastAPI(
