@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -273,16 +274,20 @@ def handle_turn(
             # 注意力层（CLR 一阶段）：话题相关性筛选 + 披露候选 + 状态持久化。
             # 事实检索已按 user_text 相关性排序；这里只对世界事件做话题过滤。
             attention_topic = analysis.result.topic or "闲聊"
-            try:
-                attention_facts, attention_events, attention_debug = select_relevant(
-                    topic_hint=attention_topic,
-                    facts=memory_facts,
-                    events=context["events"],
-                    facts_top_k=config.limits.memory_top_k,
-                    world_events_top_k=config.limits.world_events_top_k,
-                )
-            except Exception:
-                attention_facts, attention_events, attention_debug = memory_facts, context["events"], {}
+            attention_enabled = os.environ.get("SUWAN_ATTENTION_FILTER", "1") == "1"
+            if attention_enabled:
+                try:
+                    attention_facts, attention_events, attention_debug = select_relevant(
+                        topic_hint=attention_topic,
+                        facts=memory_facts,
+                        events=context["events"],
+                        facts_top_k=config.limits.memory_top_k,
+                        world_events_top_k=config.limits.world_events_top_k,
+                    )
+                except Exception:
+                    attention_facts, attention_events, attention_debug = memory_facts, context["events"], {}
+            else:
+                attention_facts, attention_events, attention_debug = memory_facts, context["events"], {"disabled": True}
             disclosure = build_disclosure(
                 topic=attention_topic,
                 events=context["events"],
