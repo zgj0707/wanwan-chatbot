@@ -10,7 +10,7 @@ from typing import BinaryIO
 from app.clock import Clock, SystemClock
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 MUTATION_LOCK = threading.Lock()
 _registry_lock = threading.Lock()
 _held_paths: set[str] = set()
@@ -37,6 +37,7 @@ REQUIRED_TABLES = frozenset(
         "character_commitments",
         "action_intents",
         "character_schedule",
+        "message_reactions",
     }
 )
 REQUIRED_INDEXES = frozenset(
@@ -216,6 +217,13 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE message_reactions (
+        message_id TEXT PRIMARY KEY REFERENCES messages(id),
+        reactions TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE character_goals (
         id TEXT PRIMARY KEY CHECK(length(id) = 36),
         title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 80),
@@ -316,6 +324,19 @@ class SchemaError(RuntimeError):
 # Incremental migrations: {current_version: (target_version, statements)}.
 # Each step only adds structures; existing rows and columns are never rewritten.
 MIGRATIONS: dict[int, tuple[int, tuple[str, ...]]] = {
+    5: (
+        6,
+        (
+            # CLR 感知扩展：用户对消息的 emoji 回应（她能"看到"）
+            """
+            CREATE TABLE message_reactions (
+                message_id TEXT PRIMARY KEY REFERENCES messages(id),
+                reactions TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        ),
+    ),
     4: (
         5,
         (

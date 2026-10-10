@@ -195,6 +195,7 @@ def build_prompt(
     history_turns: int = 8,
     memory_top_k: int = 5,
     world_events_top_k: int = 3,
+    reacted_messages: Sequence[Mapping[str, Any]] = (),
 ) -> PromptBundle:
     if not persona_version_id:
         raise ValueError("persona_version_id must not be empty")
@@ -271,6 +272,7 @@ def _fixed_messages(
     state: StateProjection,
     life_threads: Sequence[Mapping[str, Any]],
     user_text: str,
+    reacted_messages: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     guard_active = state.guard_until is not None and state.guard_until > time.character_time
     current_state = {
@@ -333,6 +335,15 @@ def _fixed_messages(
             + late_night_guide
             + "当前时间与数值状态（诊断信息，不是既成生活事件）：\n"
             + _json(current_state)
+            + (
+                "\n用户最近给你的回复点过这些回应（好恶信号，可在自然时轻轻提及，不必每条都提）：\n"
+                + _json([
+                    {"response_emoji": item.get("reactions"), "your_reply_excerpt": str(item.get("content", ""))[:40]}
+                    for item in reacted_messages
+                ])
+                if reacted_messages
+                else ""
+            )
         ),
         "life_threads": thread_data,
         "user_text": user_text,

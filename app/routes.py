@@ -480,6 +480,37 @@ def advance_world(payload: WorldAdvanceRequest, request: Request) -> dict:
         raise problem_for_code("DATABASE_ERROR") from exc
 
 
+@router.post("/messages/{message_id}/reactions")
+def set_message_reactions(message_id: str, payload: dict, request: Request):
+    """同步一条消息的 emoji 回应（前端 localStorage 为源，此为她的可见副本）。"""
+    repository = request.app.state.repository
+    try:
+        parsed = UUID(message_id)
+        if parsed.version != 4 or str(parsed) != message_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise APIProblem(422, "VALIDATION_ERROR", "message_id 必须是 UUID4。") from exc
+    reactions = payload.get("reactions")
+    if not isinstance(reactions, dict) or not all(
+        isinstance(k, str) and isinstance(v, int) for k, v in reactions.items()
+    ):
+        raise APIProblem(422, "VALIDATION_ERROR", "reactions 必须是 字符串→整数 的映射。")
+    try:
+        with mutation_guard():
+            repository.set_message_reactions(message_id, reactions, now=repository.clock.now())
+    except LookupError as exc:
+        raise problem_for_code("MESSAGE_NOT_FOUND") from exc
+    except ValueError as exc:
+        raise APIProblem(422, "VALIDATION_ERROR", "message_id 必须是 UUID4。") from exc
+    except Exception as exc:
+        from app.db import MutationBusy
+
+        if isinstance(exc, MutationBusy):
+            raise problem_for_code("APP_BUSY") from exc
+        raise problem_for_code("DATABASE_ERROR") from exc
+    return {"id": message_id, "reactions": reactions}
+
+
 @router.post("/messages/{message_id}/retract")
 def retract_message(message_id: str, payload: MessageRetractRequest, request: Request) -> dict:
     repository = request.app.state.repository

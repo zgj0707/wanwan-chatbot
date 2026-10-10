@@ -1594,6 +1594,12 @@
     if (!Object.keys(entry).length) delete reactions[messageId];
     else reactions[messageId] = entry;
     saveReactions(reactions);
+    // 同步她的可见副本（静默）：回应是给她的信号，不是私有日记
+    void request(`/messages/${messageId}/reactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reactions: entry }),
+    }).catch(() => { /* 同步失败不阻塞本地标记 */ });
   }
   function applyReactions(bubble, messageId) {
     bubble.querySelectorAll(".reaction-row").forEach((node) => node.remove());
@@ -1709,7 +1715,11 @@
       const button = make("button", options.danger ? "danger" : "", label);
       button.type = "button";
       button.setAttribute("role", "menuitem");
-      button.addEventListener("click", () => { closeContextMenu(); handler(); });
+      button.addEventListener("click", (event) => {
+        event.stopPropagation(); // 防冒泡到 document 的 click-outside 立即关掉新弹层
+        closeContextMenu();
+        handler();
+      });
       menu.append(button);
     };
     const separator = () => menu.append(make("div", "ctx-sep"));

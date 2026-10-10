@@ -1546,6 +1546,36 @@ class Repository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def set_message_reactions(self, message_id: str, reactions: dict[str, int], *, now: datetime) -> None:
+        """记录用户对某条消息的 emoji 回应（她可见）。"""
+        _validate_uuid4(message_id, "message_id")
+        with self.transaction() as connection:
+            if connection.execute("SELECT 1 FROM messages WHERE id = ?", (message_id,)).fetchone() is None:
+                raise LookupError("message not found")
+            connection.execute(
+                """INSERT INTO message_reactions(message_id, reactions, updated_at) VALUES (?, ?, ?)
+                   ON CONFLICT(message_id) DO UPDATE SET reactions = excluded.reactions, updated_at = excluded.updated_at""",
+                (message_id, json.dumps(reactions, ensure_ascii=False), to_utc_iso(now)),
+            )
+
+    def get_message_reactions(self, message_id: str) -> dict[str, int] | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT reactions FROM message_reactions WHERE message_id = ?", (message_id,)
+            ).fetchone()
+            return json.loads(row["reactions"]) if row is not None else None
+
+    def recent_reacted_messages(self, *, limit: int = 5) -> list[dict]:
+        """她最近被回应过的消息（供 prompt 感知注入）。"""
+        with self.connection() as connection:
+            rows = connection.execute(
+                """SELECT mr.message_id, mr.reactions, mr.updated_at, m.content, m.role
+                   FROM message_reactions mr JOIN messages m ON m.id = mr.message_id
+                   ORDER BY mr.updated_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def update_attention(self, *, topic: str, current_focus: str | None, disclosure: list[str], now: datetime) -> None:
         """维护注意力单行状态（upsert）；属于第一阶段的注意力解耦。"""
         timestamp = to_utc_iso(now)

@@ -323,6 +323,10 @@ def handle_turn(
                 display_timezone=config.time.display_timezone,
             )
             try:
+                try:
+                    reacted_messages = repository.recent_reacted_messages(limit=5)
+                except Exception:
+                    reacted_messages = []
                 bundle = build_prompt(
                     persona_version_id=persona["id"],
                     anchors=anchors,
@@ -336,6 +340,7 @@ def handle_turn(
                     history=_history(context["messages"]),
                     user_text=request.text,
                     input_budget_units=config.profiles.chat.input_budget_units,
+                    reacted_messages=reacted_messages,
                     history_turns=config.limits.history_turns,
                     memory_top_k=config.limits.memory_top_k,
                     world_events_top_k=config.limits.world_events_top_k,
