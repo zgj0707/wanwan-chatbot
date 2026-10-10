@@ -30,6 +30,11 @@ def _build_v1_database(path: Path) -> None:
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("DROP TABLE character_schedule")
+        connection.execute("DROP TABLE action_intents")
+        connection.execute("DROP TABLE character_commitments")
+        connection.execute("DROP TABLE character_goals")
+        connection.execute("ALTER TABLE character_state DROP COLUMN current_activity")
         connection.execute("DROP TABLE attention_state")
         connection.execute("DROP INDEX idx_materials_status_created")
         connection.execute("DROP TABLE materials")

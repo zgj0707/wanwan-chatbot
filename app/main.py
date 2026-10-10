@@ -85,6 +85,15 @@ def create_app(
         try:
             initialize_database(database_path, clock=repository.clock)
             repository.recover_pending_operations()
+            # CLR 二阶段：日程/目标/承诺种子 + 生活时间线补算（纯规则，零 LLM 调用）
+            try:
+                from app.life import run_startup_catchup, seed_goals, seed_schedule
+
+                seed_schedule(repository, now=repository.clock.now())
+                seed_goals(repository, now=repository.clock.now())
+                app.state.startup_life_events = run_startup_catchup(repository, now=repository.clock.now())
+            except Exception:
+                app.state.startup_life_events = []
             app.state.repository = repository
             if config.limits.auto_world_update:
                 try:

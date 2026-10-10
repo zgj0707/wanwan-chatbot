@@ -71,6 +71,7 @@ class _CharacterStateRow(StrictModel):
     character_id: StrictStr
     valence: StrictInt = Field(ge=-100, le=100)
     energy: StrictInt = Field(ge=0, le=100)
+    current_activity: StrictStr | None = None
     updated_at: StrictStr
     version: StrictInt = Field(gt=0)
 

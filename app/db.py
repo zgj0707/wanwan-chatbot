@@ -10,7 +10,7 @@ from typing import BinaryIO
 from app.clock import Clock, SystemClock
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MUTATION_LOCK = threading.Lock()
 _registry_lock = threading.Lock()
 _held_paths: set[str] = set()
@@ -33,6 +33,10 @@ REQUIRED_TABLES = frozenset(
         "call_metrics",
         "materials",
         "attention_state",
+        "character_goals",
+        "character_commitments",
+        "action_intents",
+        "character_schedule",
     }
 )
 REQUIRED_INDEXES = frozenset(
@@ -98,6 +102,7 @@ SCHEMA_STATEMENTS = (
         character_id TEXT PRIMARY KEY CHECK(character_id = 'suwan'),
         valence INTEGER NOT NULL CHECK(valence BETWEEN -100 AND 100),
         energy INTEGER NOT NULL CHECK(energy BETWEEN 0 AND 100),
+        current_activity TEXT,
         updated_at TEXT NOT NULL,
         version INTEGER NOT NULL CHECK(version > 0)
     )
@@ -211,6 +216,49 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE character_goals (
+        id TEXT PRIMARY KEY CHECK(length(id) = 36),
+        title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 80),
+        horizon TEXT NOT NULL CHECK(horizon IN ('long', 'mid', 'short')),
+        detail TEXT,
+        progress_step INTEGER NOT NULL DEFAULT 0 CHECK(progress_step >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('idea', 'active', 'paused', 'done', 'abandoned')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE character_commitments (
+        id TEXT PRIMARY KEY CHECK(length(id) = 36),
+        kind TEXT NOT NULL CHECK(kind IN ('value', 'conflict', 'principle', 'commitment')),
+        content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 200),
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE action_intents (
+        id TEXT PRIMARY KEY CHECK(length(id) = 36),
+        goal_id TEXT REFERENCES character_goals(id),
+        candidate_actions TEXT NOT NULL,
+        chosen_action TEXT NOT NULL,
+        decided_by TEXT NOT NULL CHECK(decided_by IN ('rule', 'small_model', 'large_model')),
+        validation TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'executed', 'rejected', 'skipped')),
+        sim_time TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE character_schedule (
+        id TEXT PRIMARY KEY CHECK(length(id) = 36),
+        day_type TEXT NOT NULL CHECK(day_type IN ('workday', 'weekend')),
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        activity TEXT NOT NULL CHECK(length(activity) BETWEEN 1 AND 60),
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE app_meta (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -268,6 +316,56 @@ class SchemaError(RuntimeError):
 # Incremental migrations: {current_version: (target_version, statements)}.
 # Each step only adds structures; existing rows and columns are never rewritten.
 MIGRATIONS: dict[int, tuple[int, tuple[str, ...]]] = {
+    4: (
+        5,
+        (
+            # CLR 二阶段：目标 / 承诺 / 行动意图 / 日程 + 当前活动列
+            """
+            CREATE TABLE character_goals (
+                id TEXT PRIMARY KEY CHECK(length(id) = 36),
+                title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 80),
+                horizon TEXT NOT NULL CHECK(horizon IN ('long', 'mid', 'short')),
+                detail TEXT,
+                progress_step INTEGER NOT NULL DEFAULT 0 CHECK(progress_step >= 0),
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('idea', 'active', 'paused', 'done', 'abandoned')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE character_commitments (
+                id TEXT PRIMARY KEY CHECK(length(id) = 36),
+                kind TEXT NOT NULL CHECK(kind IN ('value', 'conflict', 'principle', 'commitment')),
+                content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 200),
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE action_intents (
+                id TEXT PRIMARY KEY CHECK(length(id) = 36),
+                goal_id TEXT REFERENCES character_goals(id),
+                candidate_actions TEXT NOT NULL,
+                chosen_action TEXT NOT NULL,
+                decided_by TEXT NOT NULL CHECK(decided_by IN ('rule', 'small_model', 'large_model')),
+                validation TEXT,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'executed', 'rejected', 'skipped')),
+                sim_time TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE character_schedule (
+                id TEXT PRIMARY KEY CHECK(length(id) = 36),
+                day_type TEXT NOT NULL CHECK(day_type IN ('workday', 'weekend')),
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                activity TEXT NOT NULL CHECK(length(activity) BETWEEN 1 AND 60),
+                created_at TEXT NOT NULL
+            )
+            """,
+            "ALTER TABLE character_state ADD COLUMN current_activity TEXT",
+        ),
+    ),
     3: (
         4,
         (
