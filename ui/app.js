@@ -40,7 +40,6 @@
     replyPreview: document.getElementById("reply-preview"),
     moodBackgroundGrid: document.getElementById("mood-background-grid"),
     scrollBottom: document.getElementById("scroll-bottom"),
-    pending: document.getElementById("pending-area"),
     form: document.getElementById("composer"),
     input: document.getElementById("message-input"),
     send: document.getElementById("send-button"),
@@ -287,7 +286,8 @@
 
   /* ── 运行提示（Toast）─────────────────────────
      统一出口：info / success / warn / error，可带操作按钮与进度条。
-     不再往 #pending-area 插入卡片——那里每次 renderPending() 都会被清空。 */
+     持久的发送/失败状态在消息流末尾的 #message-flow-pending；toast 只做短暂提醒。 */
+  const MESSAGE_FLOW_PENDING_ID = "message-flow-pending";
   const TOAST_ICON = { info: "i", success: "✓", warn: "!", error: "!" };
   const TOAST_LIMIT = 3;
   function toast(message, options = {}) {
@@ -1484,6 +1484,7 @@
     }
     scrollToBottom();
     updateScrollAffordance();
+    if (pending && pending.session_id === activeSessionId) renderPending();
   }
   function appendLoadEarlier() {
     const button = make("button", "load-earlier", "加载更早的消息");
@@ -1881,39 +1882,73 @@
     }
     updateScrollAffordance();
   }
+  function clearMessageFlowPending() {
+    els.messages.querySelector(`#${MESSAGE_FLOW_PENDING_ID}`)?.remove();
+  }
+  function appendPendingActions(container, { includeRetry = false, includeResumeWait = false } = {}) {
+    const actions = make("div", "pending-actions");
+    if (includeRetry && pending.error?.retryable) {
+      const retry = make("button", "secondary-button", "再试一次");
+      retry.type = "button";
+      retry.addEventListener("click", () => { void sendPending(true); });
+      actions.append(retry);
+    }
+    if (includeResumeWait) {
+      const resume = make("button", "secondary-button", "继续在此等待");
+      resume.type = "button";
+      resume.addEventListener("click", () => {
+        pending.wait_dismissed = false;
+        savePending();
+        if (!polling && !isWaiting) beginPolling();
+        renderPending();
+      });
+      actions.append(resume);
+    }
+    const query = make("button", "text-button", "查询状态");
+    query.type = "button";
+    query.addEventListener("click", () => { void checkOperation(true); });
+    actions.append(query);
+    container.append(actions);
+  }
   function renderPending() {
-    els.pending.replaceChildren();
+    clearMessageFlowPending();
     const belongs = pending && pending.session_id === activeSessionId;
     if (!belongs) {
       renderComposerState();
       els.queryOperation.classList.add("hidden");
       return;
     }
-    const outgoing = make("div", "message-row user pending-message");
+    const showTyping = !pending.error && !(pending.wait_dismissed && !isWaiting && !polling);
+    const anchor = make("div", "message-flow-pending");
+    anchor.id = MESSAGE_FLOW_PENDING_ID;
+    anchor.setAttribute("aria-live", "polite");
+    const outgoing = make("div", "message-row user pending-message group-start");
     const outgoingBody = make("div", "message-body");
+    const authorRow = make("div", "message-author-row");
+    let timeLabel = "正在发送";
+    if (pending.error) timeLabel = "未送达";
+    else if (pending.wait_dismissed && !isWaiting && !polling) timeLabel = "等待回复";
+    authorRow.append(make("time", "message-time", timeLabel));
+    outgoingBody.append(authorRow);
     outgoingBody.append(make("div", "bubble", pending.text));
-    outgoingBody.append(make("time", "message-time", pending.error ? "未送达" : "正在发送"));
-    outgoing.append(outgoingBody);
-    els.pending.append(outgoing);
     if (pending.error) {
-      const card = make("div", "pending-card error-card");
-      card.append(make("div", "", "这条消息暂时没能确认送达。"));
-      if (pending.error.message) card.append(make("div", "pending-detail", pending.error.message));
-      card.append(make("div", "pending-detail", `操作编号 ${pending.operation_id.slice(0, 8)}… · 可在刷新后继续处理`));
-      const actions = make("div", "pending-actions");
-      if (pending.error.retryable) {
-        const retry = make("button", "secondary-button", "再试一次");
-        retry.type = "button";
-        retry.addEventListener("click", () => { void sendPending(true); });
-        actions.append(retry);
-      }
-      const query = make("button", "text-button", "查询状态");
-      query.type = "button";
-      query.addEventListener("click", () => { void checkOperation(true); });
-      actions.append(query);
-      card.append(actions);
-      els.pending.append(card);
-    } else {
+      const status = make("div", "outbound-status error");
+      status.append(make("div", "outbound-status-title", "这条消息暂时没能确认送达。"));
+      if (pending.error.message) status.append(make("div", "outbound-status-detail", pending.error.message));
+      status.append(make("div", "outbound-status-detail", `操作编号 ${pending.operation_id.slice(0, 8)}… · 可在刷新后继续处理`));
+      appendPendingActions(status, { includeRetry: true });
+      outgoingBody.append(status);
+    } else if (pending.wait_dismissed && !isWaiting && !polling) {
+      const status = make("div", "outbound-status info");
+      status.append(make("div", "outbound-status-title", "已停止界面等待"));
+      status.append(make("div", "outbound-status-detail", "服务端仍在处理这条消息，停止等待不会取消服务端处理；回复就绪后会自动出现在下方。"));
+      appendPendingActions(status, { includeResumeWait: true });
+      outgoingBody.append(status);
+    }
+    outgoing.append(make("span", "avatar user-avatar", "我"));
+    outgoing.append(outgoingBody);
+    anchor.append(outgoing);
+    if (showTyping) {
       const waiting = make("div", "message-row assistant waiting-message");
       waiting.append(make("span", "avatar life", ""));
       waiting.querySelector(".avatar.life").append(Object.assign(document.createElement("img"), { src: "/ui/assets/avatar-small.png", alt: "" }));
@@ -1931,10 +1966,16 @@
       bubble.append(make("span", "typing-label", pool[Math.floor(Math.random() * pool.length)]));
       waitingBody.append(bubble);
       waiting.append(waitingBody);
-      els.pending.append(waiting);
+      anchor.append(waiting);
       startElapsedTimer(elapsed);
+    } else {
+      stopElapsedTimer();
     }
-    els.queryOperation.classList.toggle("hidden", !pending.error);
+    els.messages.append(anchor);
+    if (isNearBottom()) scrollToBottom(true);
+    else markNewMessage();
+    updateScrollAffordance();
+    els.queryOperation.classList.toggle("hidden", !(pending.error || pending.wait_dismissed));
     renderComposerState();
   }
   /* 等待计时：让"卡住了"和"在慢慢回"可区分 */
@@ -1972,6 +2013,7 @@
     if (pending.session_id !== activeSessionId) await activatePendingSession();
     pending.error = null;
     pending.status = "pending";
+    pending.wait_dismissed = false;
     savePending();
     renderPending();
     setWaiting(true);
@@ -2111,9 +2153,11 @@
     setWaiting(false);
     if (pending) {
       pending.status = "pending";
+      pending.wait_dismissed = true;
+      stopElapsedTimer();
       savePending();
       renderPending();
-      toast("已停止等待。消息仍会在后台继续处理，稍后自动出现。", { duration: 5000 });
+      toast("已停止等待。服务端仍在处理，不会因此取消；回复稍后会自动出现。", { duration: 5000 });
     } else renderComposerState();
   }
   async function activatePendingSession() {

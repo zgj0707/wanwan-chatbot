@@ -97,6 +97,16 @@ def test_messages_and_frontend_render_untrusted_text_as_text(tmp_path: Path):
         client.__exit__(None, None, None)
 
 
+def test_frontend_pending_state_is_attached_to_message_flow():
+    html = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+    source = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+    assert "pending-area" not in html
+    assert "message-flow-pending" in source
+    assert "clearMessageFlowPending" in source
+    assert "outbound-status" in source
+    assert "停止等待不会取消服务端处理" in source
+
+
 def test_operation_status_rebuilds_messages_from_database(tmp_path: Path):
     _, client = make_client(tmp_path)
     try:

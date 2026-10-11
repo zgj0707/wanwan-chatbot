@@ -287,14 +287,27 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
 .new-message-flag:empty, .new-message-flag.hidden { display: none; }
 
 /* ── 待处理区（发送中 / 失败重试）────────── */
-.pending-area { width: min(var(--content-width), calc(100% - 40px)); margin: 0 auto; }
-.pending-card { border: 1px solid var(--accent-border); background: var(--panel); border-radius: var(--radius-md); padding: 11px 14px; margin-bottom: 10px; color: var(--ink-soft); font-size: 12px; box-shadow: var(--shadow-sm); }
-.pending-card.error-card { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-ink); }
-.pending-card .pending-detail { margin-top: 4px; color: inherit; opacity: .82; }
-.pending-card .pending-actions { display: flex; gap: 8px; margin-top: 8px; }
-.pending-message, .waiting-message { margin-bottom: 10px; }
+.message-flow-pending { width: 100%; }
+.message-flow-pending .pending-message,
+.message-flow-pending .waiting-message { margin-bottom: 10px; }
 .pending-message .bubble { border: 1px dashed var(--line-strong); background: var(--panel-soft); color: var(--ink-soft); }
 .waiting-message .bubble { background: var(--panel-soft); }
+.outbound-status {
+  margin-top: 8px;
+  border: 1px solid var(--accent-border);
+  background: var(--panel);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: var(--shadow-sm);
+}
+.outbound-status.error { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-ink); }
+.outbound-status.info { border-color: var(--accent-border); background: var(--panel-soft); }
+.outbound-status-title { font-weight: 600; }
+.outbound-status-detail { margin-top: 4px; opacity: .88; }
+.outbound-status .pending-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 /* ── 输入区 ───────────────────────────────── */
 .composer { width: min(var(--content-width), calc(100% - 40px)); margin: 0 auto 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-md); padding: 13px 16px 10px; transition: border-color var(--dur), box-shadow var(--dur); }
@@ -472,7 +485,7 @@ kbd { font-family: var(--font-num); font-size: 11px; background: var(--panel); b
   .collapse-button { display: none; }
   .mobile-menu-button { display: grid; }
   .topbar { padding: 11px 16px; }
-  .messages, .composer, .pending-area, .initiative-notice { width: calc(100% - 28px); }
+  .messages, .composer, .initiative-notice { width: calc(100% - 28px); }
   .message-body { max-width: 88%; }
   .manual-memory-form, .probe-form { grid-template-columns: 1fr; align-items: stretch; }
   .persona-grid, .diagnostics-grid { grid-template-columns: 1fr; }
