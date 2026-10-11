@@ -325,3 +325,51 @@ def test_unknown_voice_sections_are_retained_without_becoming_fact_payloads():
     bundle = build_prompt(**args)
     assert args["voice_text"] in bundle.messages[1]["content"]
     assert "保留版本专属描述" not in bundle.messages[0]["content"]
+
+
+def test_experience_evidence_layers_remain_explicit_when_context_is_trimmed():
+    args = make_prompt_data()
+    args["world_events"] = [make_event("event", "committed", "2026-10-06T19:30:00Z")]
+    args["facts"] = [{"id": "fact", "key": "preference.hobby", "value": "水彩画", "status": "active"}]
+    full = build_prompt(**args)
+    minimum = build_prompt(**{**args, "world_events": [], "facts": []})
+    trimmed = build_prompt(**{**args, "input_budget_units": minimum.input_units})
+    assert trimmed.fact_ids == trimmed.event_ids == ()
+    assert trimmed.messages[-2] == full.messages[-2]
+    lock = trimmed.messages[-2]["content"]
+    for term in ("确认事实", "已提交事件", "合理猜测", "没有记录", "模糊回忆", "人物、时间、地点和活动"):
+        assert term in lock
+    assert "threads仅是生活事项，只有events是已提交事件" in trimmed.messages[3]["content"]
+
+
+@pytest.mark.parametrize("user_text", [
+    "你刚才整理照片时有什么发现？",
+    "你现在在忙什么？",
+])
+def test_full_persona_keeps_committed_photo_event_with_configured_budget(user_text):
+    from app.config import load_config
+    from app.state import project_state
+    from uuid import uuid4
+
+    args = persona_prompt_data()
+    now = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
+    args["time"] = time_context(now)
+    args["state"] = project_state(*make_states(updated_at=now), now)
+    next(thread for thread in args["life_threads"] if thread["template_key"] == "photo_selection").update(
+        stage="started", step=1,
+    )
+    event = make_event(
+        str(uuid4()), "committed", "2026-10-03T11:30:00Z",
+        "我先挑出几张光线柔和的照片，放到一边慢慢整理。",
+    )
+    event["thread_id"] = str(uuid4())
+    args["world_events"] = [event]
+    args["user_text"] = user_text
+    args["input_budget_units"] = load_config(Path(__file__).resolve().parents[1] / "config.example.yaml").profiles.chat.input_budget_units
+
+    bundle = build_prompt(**args)
+
+    assert bundle.event_ids == (event["id"],)
+    assert bundle.dropped_event_ids == ()
+    assert bundle.input_units <= args["input_budget_units"]
+    assert json.loads(bundle.messages[3]["content"].split("\n", 1)[1])["events"][0]["id"] == event["id"]

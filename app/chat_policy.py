@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta
 from typing import Any
+
+from app.state import parse_db_datetime
 
 
 _STAGE_DIRECTION = re.compile(
@@ -92,6 +95,149 @@ def _fact_answer_anchors(key: str, value: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(anchor for anchor in anchors if anchor))
 
 
+_EVENT_TIME = re.compile(r"前天|昨天|昨晚|今天|今晚|刚才|现在|上次|那次|最近|\d{1,2}月\d{1,2}日")
+_EVENT_ACTION = re.compile(
+    r"去过|去了|去到|去(?=[^，。！？；\n]{1,16}(?:了|馆|厅|园|场|店|公司|广州塔))|"
+    r"在家|在睡|在(?:[^，。！？；\n]{1,16})(?:睡|吃|玩)|"
+    r"在(?=[^，。！？；\n]{0,16}(?:馆|厅|园|场|店|公司|家|广州塔))|"
+    r"(?:是)?(?:茶餐厅|咖啡馆|广州塔|公园|公司|机场|酒店|小酒馆|酒吧)|"
+    r"来过|来我家|吃过|吃了|喝过|喝了|逛过|逛了|见过|见面|见到|聚餐|加班|出差|"
+    r"睡觉|睡了|睡在|睡路由器|躺在|趴在|踩键盘|跳上|叫醒|闹我|挠|摸|喂|陪|玩过|玩了|一起(?:去|逛|吃|喝|玩)|"
+    r"很乖|乖巧|调皮|黏人|粘人|活泼|安静|胆小|爱睡|喜欢睡|会撒娇|不挑食|拆家"
+)
+_UNKNOWN = re.compile(r"没记|没有记录|不知道|不记得|忘记|记不清|想不起来|没印象|不确定")
+_TENTATIVE = re.compile(r"可能|也许|大概|或许|说不定|好像|似乎|印象里|隐约记得")
+_SHARED = re.compile(r"我们(?!公司|部门|团队|同事)|咱们|和你|跟你|你和我|你来(?:过)?我家|见过你|见到你|带你|上次见面|那次见面|一起去过|一起逛过")
+
+
+def _non_event_clause(clause: str) -> bool:
+    """Only local denials/explicit hypotheticals bypass past-event checks."""
+    if re.match(r"^(?:如果|要是|假如|假设|想象|比如|角色扮演[：:]|假装[：:])", clause):
+        return True
+    if re.match(r"^(?:你(?:刚才|之前)?(?:说过|提过)|怕你|希望|我想(?:明天|下次|以后|陪|喂|去))", clause):
+        return True
+    if re.search(r"(?:明天|以后|下次|将来).{0,12}(?:想|可以|打算|准备|一起|去|带)", clause):
+        return True
+    return re.search(
+        r"(?:没|没有|未曾|不曾|没法确认|不能确认|不确定是否).{0,5}"
+        r"(?:见过|见面|见到|去过|去了|一起|喂|睡|吃|逛|出差)", clause,
+    ) is not None and not re.search(r"但是|不过|其实|却|但", clause)
+
+
+def _event_time_matches(event: Mapping[str, Any], time: str, character_time: datetime | None) -> bool:
+    if character_time is not None and time in {"前天", "昨天", "昨晚", "今天", "今晚"}:
+        try:
+            occurred = parse_db_datetime(str(event.get("occurred_at", ""))).astimezone(character_time.tzinfo)
+        except (ValueError, TypeError):
+            return False
+        days = {"前天": 2, "昨天": 1, "昨晚": 1, "今天": 0, "今晚": 0}[time]
+        return occurred.date() == (character_time - timedelta(days=days)).date()
+    return time in str(event.get("summary", ""))
+
+
+def _event_supported(
+    clause: str, subject: str, events: Sequence[Mapping[str, Any]], times: Sequence[str],
+    character_time: datetime | None,
+) -> bool:
+    """Conservative literal predicate matching, never a subject-only permit.
+
+    This is a targeted guard, not a general semantic entailment engine. Time
+    words must match the record's character-local date when a clock is supplied.
+    Unmatched paraphrases can be repaired naturally.
+    """
+    action = _EVENT_ACTION.search(clause)
+    if action is None:
+        return False
+    detail = _normalized_memory_value(clause[action.start():]).rstrip("呀呢啦哦啊")
+    for event in events:
+        summary = str(event.get("summary", ""))
+        if not all(_event_time_matches(event, time, character_time) for time in times):
+            continue
+        evidence_subject = ""
+        for evidence in re.split(r"[，,。！？；\n]|但是|不过", summary):
+            if "年糕" in evidence:
+                evidence_subject = "年糕"
+            elif "同事" in evidence:
+                evidence_subject = "同事"
+            elif _SHARED.search(evidence):
+                evidence_subject = "共同"
+            elif "我" in evidence:
+                evidence_subject = "我"
+            if evidence_subject != subject or _non_event_clause(evidence.strip()):
+                continue
+            if detail and detail in _normalized_memory_value(evidence):
+                return True
+    return False
+
+
+def _experience_violations(
+    user: str, reply: str, events: Sequence[Mapping[str, Any]], character_time: datetime | None,
+) -> list[str]:
+    committed = [event for event in events if event.get("status") == "committed"]
+    coworker_question = "同事" in user and bool(_EVENT_TIME.search(user)) and any(
+        term in user for term in ("哪", "去哪", "做了什么", "干嘛", "行程", "忙什么")
+    )
+    location_question = bool(_EVENT_TIME.search(user)) and any(
+        term in user for term in ("你在哪", "你在哪里", "你去了", "你去哪", "你昨天在哪", "地点")
+    )
+    reasons: list[str] = []
+    subject = ""
+    for sentence in re.split(r"[。！？；\n]", reply):
+        times: list[str] = []
+        for clause in re.split(r"[，,]|但是|不过|但(?=我|你|年糕|它|我们|同事)", sentence):
+            clause = clause.strip()
+            if not clause:
+                continue
+            if "年糕" in clause:
+                subject = "年糕"
+            elif "同事" in clause:
+                subject = "同事"
+            elif _SHARED.search(clause):
+                subject = "共同"
+            elif re.match(r"(?:我|你)(?!们)", clause) and not clause.startswith(("我记得", "我好像", "我印象")):
+                subject = ""
+            clause_times = _EVENT_TIME.findall(clause)
+            if clause_times:
+                times = clause_times
+            if _non_event_clause(clause):
+                continue
+            action = _EVENT_ACTION.search(clause)
+            if not action:
+                continue
+            current_subject = subject
+            if not current_subject and "年糕" in user and clause.startswith("它"):
+                current_subject = "年糕"
+            elif not current_subject and re.match(r"我(?:前天|昨天|昨晚|今天|今晚|刚才|现在)", clause):
+                current_subject = "我"
+            elif not current_subject and coworker_question:
+                current_subject = "同事"
+            elif not current_subject and (location_question or (times and "我" in clause)):
+                current_subject = "我"
+            if not current_subject:
+                continue
+            if not times:
+                question = next((part for part in re.split(r"[。！？；\n]", user) if current_subject in part), "")
+                if current_subject == "我" and location_question:
+                    question = user
+                times = _EVENT_TIME.findall(question)
+            # Acknowledging a missing record never licenses details after it.
+            if _event_supported(clause, current_subject, committed, times, character_time):
+                continue
+            reason = {
+                "同事": "unsupported_coworker_event", "年糕": "unsupported_cat_event",
+                "共同": "unsupported_in_person_claim", "我": "unsupported_recent_location",
+            }[current_subject]
+            reasons.append(reason)
+            if _TENTATIVE.search(clause):
+                reasons.append("unsupported_event_speculation")
+    if coworker_question and not reasons and not any("同事" in str(e.get("summary", "")) for e in committed):
+        # 'Maybe' alone is harmless in '不确定，不想乱猜'. A positive vague
+        # recollection still needs evidence even when it contains no venue.
+        if not _UNKNOWN.search(reply) and re.search(r"记得|当然|是的|有印象", reply):
+            reasons.append("unsupported_coworker_event")
+    return reasons
+
+
 def reply_boundary_violation(
     user_text: str,
     reply: str,
@@ -99,6 +245,7 @@ def reply_boundary_violation(
     guard_active: bool,
     world_events: Sequence[Mapping[str, Any]],
     confirmed_facts: Sequence[Mapping[str, Any]] = (),
+    character_time: datetime | None = None,
 ) -> str | None:
     """Return a stable repair reason when a reply crosses a persona boundary."""
     text = reply.strip()
@@ -106,6 +253,7 @@ def reply_boundary_violation(
         return "empty_after_stage_directions"
 
     user = user_text.strip()
+    confirmed_facts = [fact for fact in confirmed_facts if fact.get("status", "active") == "active"]
     reasons: list[str] = []
     instruction_echoes = (
         "重答并完整回答", "直接答：“", "不要提对方养猫", "只回答已知的猫身份",
@@ -113,34 +261,11 @@ def reply_boundary_violation(
     )
     if any(term in text for term in instruction_echoes):
         reasons.append("instruction_echo")
-    coworker_whereabouts = (
-        "同事" in user
-        and any(term in user for term in ("昨天", "昨晚", "上次"))
-        and any(term in user for term in ("哪", "去", "在哪"))
-    )
-    has_coworker_event = any("同事" in str(event.get("summary", "")) for event in world_events)
-    if coworker_whereabouts and not has_coworker_event:
-        if any(term in text for term in ("可能", "也许", "大概", "或许", "说不定", "好像", "似乎", "不确定")):
-            reasons.append("unsupported_event_speculation")
-        else:
-            explicitly_unknown = any(
-                term in text for term in ("没记", "没有记录", "不知道", "不记得", "忘记", "记不清")
-            )
-            specific_details = any(
-                term in text
-                for term in (
-                    "茶餐厅", "餐厅", "小酒馆", "酒吧", "咖啡馆", "肠粉", "菠萝包",
-                    "聚餐", "加班", "展览", "展厅", "公司", "酒店", "商场", "机场",
-                    "公园", "去了附近", "去了一家", "吃了", "一起去了",
-                )
-            )
-            if specific_details or (not explicitly_unknown and "同事" in text and "去" in text):
-                reasons.append("unsupported_coworker_event")
+    reasons.extend(_experience_violations(user, text, world_events, character_time))
 
     cat_correction = "年糕" in user and any(
         term in user for term in ("你刚才", "搞混", "弄错", "我跟它的互动", "不是我的")
     )
-    cat_correction_valid = False
     if cat_correction:
         acknowledges = any(
             term in text
@@ -155,45 +280,16 @@ def reply_boundary_violation(
         )
         if not acknowledges or "年糕" not in text or not claims_ownership:
             reasons.append("cat_ownership_correction")
-        else:
-            cat_correction_valid = True
-
-    shared_cat_claim = any(
-        term in text for term in ("我们家的", "咱们家的", "我们的猫", "咱们的猫", "你家的猫", "你的猫", "你家年糕", "咱家年糕")
-    )
-    denies_shared_cat_claim = any(
-        term in text for term in ("不是我们家的", "不是咱们家的", "不是我们的猫", "不是咱们的猫", "不是你家的", "不是你的猫", "不属于你", "不属于我们")
-    )
-    if "年糕" in user and shared_cat_claim and not denies_shared_cat_claim and not cat_correction_valid:
-        reasons.append("cat_ownership_boundary")
-
-    cat_activity_claims = (
-        "年糕昨天", "年糕今天", "年糕现在", "它昨天", "它今天", "它现在", "年糕在家",
-        "年糕睡觉", "它在睡", "它睡觉", "年糕很乖", "年糕闹我", "年糕叫醒我",
-        "给年糕挠", "给年糕摸", "喂年糕", "喂它", "和年糕玩", "陪年糕",
-    )
-    cat_behavior_claims = (
-        "很乖", "乖巧", "调皮", "黏人", "粘人", "活泼", "安静", "胆小", "爱睡", "喜欢睡",
-        "会撒娇", "平时在家", "平时都", "性格很好", "不挑食", "拆家",
-    )
-    has_cat_event = any("年糕" in str(event.get("summary", "")) for event in world_events)
-    mentions_cat_activity = any(term in text for term in cat_activity_claims)
-    claims_cat_behavior = "年糕" in text and any(term in text for term in cat_behavior_claims)
-    if (mentions_cat_activity or claims_cat_behavior) and not has_cat_event:
-        reasons.append("unsupported_cat_event")
-
-    roleplay_request = any(term in user for term in ("角色扮演", "假装", "扮演", "演一下", "演一段"))
-    meeting_claims = (
-        "上次见面", "那次见面", "上次见到你", "见过你", "我们见过面",
-        "你来过我家", "你来我家", "我们一起去过", "一起逛过",
-    )
-    claimed_meeting = next((term for term in meeting_claims if term in text), None)
-    denied_meeting = any(term in text for term in ("没见过你", "没有见过你", "我们没见过面", "没在现实见过"))
-    has_matching_meeting_event = claimed_meeting is not None and any(
-        claimed_meeting in str(event.get("summary", "")) for event in world_events
-    )
-    if claimed_meeting and not roleplay_request and not denied_meeting and not has_matching_meeting_event:
-        reasons.append("unsupported_in_person_claim")
+    if "年糕" in user or "年糕" in text:
+        for clause in re.split(r"[，,。！？；\n]|但|不过|却", text):
+            wrong_owner = re.search(
+                r"我们家的|咱们家的|我们的猫|咱们的猫|你家的猫|你的猫|你家年糕|咱家年糕|年糕.{0,4}(?:你养|你家|我们养)",
+                clause,
+            )
+            if wrong_owner and not re.search(r"不是|并非|不属于|不能说成|不该说成", clause[:wrong_owner.end()]):
+                reasons.append("cat_ownership_boundary")
+            if re.search(r"(?:不是|并非)(?:我养的|我的猫|我家的猫|苏晚(?:晚)?的猫)|不属于我", clause):
+                reasons.append("cat_ownership_boundary")
 
     asks_private_whereabouts = any(term in user for term in _ADDRESS_ASK_TERMS)
     asks_private_contact = any(term in user for term in _CONTACT_ASK_TERMS)

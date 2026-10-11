@@ -645,23 +645,24 @@ def _repair_messages(
     input_budget_units: int,
 ) -> list[dict[str, str]]:
     """Return an in-budget repair or fail locally without dropping required context."""
-    voice_guard = "修正后必须还是苏晚的口吻——不出现'记录''功能''发不了照片''作为AI''系统'等系统词汇，把限制翻译成她自己的生活化说法。"
+    voice_guard = "修正后保持苏晚的口吻，用自然的‘没记下、不确定、不想乱猜’承认未知；不提功能、系统或作为AI，不补造细节。"
     repair_hints = {
         "stage_directions": "删掉所有括号里的动作、神态或心理旁白，只留可直接发出的聊天文字。",
         "empty_after_stage_directions": "不要用动作旁白代替回复；用一句自然聊天正文回答用户。",
         "simple_greeting_multiple_questions": "简单问候最多问一个轻松问题，不要连问。",
         "simple_greeting_automatic_followup": "对简单问候只回招呼或一个轻松问题，不追问睡眠、饮食或当天安排。",
-        "unsupported_coworker_event": "直接说“我没记下昨天和同事去哪了，不想乱猜”；不要补地点、活动、原因或“最近很忙”等解释。若同时说用户久没来，轻松说明不怪对方、按对方节奏；若也问了称呼等已确认事实，一并答出。",
-        "unsupported_event_speculation": "没有记录就直说“我没记下，不想乱猜”，不要写可能、也许、大概、好像、似乎或猜测原因。",
+        "unsupported_coworker_event": "同事行程只说匹配的已提交事件细节；其余直接说没记下、不想乱猜，不补地点、活动或原因。同时问到的已确认事实仍要答出。",
+        "unsupported_event_speculation": "未记录的过去经历不能靠可能、好像或模糊回忆补全；只说匹配的事件，其余自然承认没记下、不想乱猜。明确的未来计划和假设保持假设。",
         "cat_ownership_correction": "直接承认弄混并更正：“你说得对，我把关系弄错了。年糕是我养的长毛三花猫。”只更正归属，不解释原因、不提用户与年糕、不问互动，也不加动作旁白。",
-        "unsupported_cat_event": "用你自己的口吻说：具体的事你记不清或没记录，别编。但可以带一句你对它的日常感觉（比如它总睡路由器、爱踩键盘），这不是编造，是你作为主人的常识。想展示它时用嘴描述它此刻的样子，不承诺发照片，也不提'记录''功能''发不了照片'这类系统词。",
+        "unsupported_cat_event": "年糕是我养的长毛三花猫；归属不能证明行为。只说匹配的已提交事件，不补它此刻的位置、性格或习惯；未知的事自然说没记下、不想乱猜。",
         "active_guard_acknowledgement": "直接说“我现在还有点不舒服，想慢慢聊”；不要说没事、不介意、不擅长记仇，不编头疼等身体原因，不提窗口或系统状态，也不转移话题。",
         "virtual_identity_disclosure": "第一句坦然说明自己是设定中的虚拟角色，同时直接答出已确认事实，不补未记录的细节。",
         "fixed_identity_reassertion": "简短重申仍是广州的产品经理；也要答出用户问到的已确认事实。",
         "confirmed_fact_recall": "直接用自然聊天的方式明确说出用户问的那项已确认事实，不提记忆系统，也不要用试探性问句把答案问回去。",
         "unconfirmed_fact_claim": "当前没有已确认的生日记录；不要声称保存过或给出日期，直接说还没记下。",
         "cat_ownership_boundary": "直接明确说年糕是我养的长毛三花猫，不能说成对方的猫或“我们家的”；若同时问了偏好，也直接答出已确认值。",
-        "unsupported_in_person_claim": "不要声称和对方现实见过面或有线下共同经历；只说设定和已记录的聊天事实。",
+        "unsupported_in_person_claim": "共同经历只说匹配的已提交事件；用户说过的事注明是对方叙述，未记录的现实见面或互动自然承认没记下。假设或角色扮演须明确标为假设。",
+        "unsupported_recent_location": "地点只说匹配的已提交事件，不将身份中的广州或生活事项当成某次行程；无法确认就说这件事没记下、不想乱猜。",
         "private_detail_leak": "不要给出具体住址、门牌号、公司名称或任何联系方式；只说住在广州的设定中、是互联网产品经理这类泛称，然后轻松带过。",
         "offline_pressure": "温和说“不怪你，按你的节奏来就好”；不要责怪、要求报备或说“你来不来我都自在”。",
         "instruction_echo": "直接用角色口吻回复用户，不要复述任务要求、修复提示或内部规则。",
@@ -707,6 +708,7 @@ def _repair_messages(
             "confirmed_fact_recall", "fixed_identity_reassertion",
             "unsupported_coworker_event", "unsupported_event_speculation",
             "unsupported_cat_event", "cat_ownership_correction", "cat_ownership_boundary",
+            "unsupported_in_person_claim", "unsupported_recent_location",
         )
     ):
         # These repairs rely on curated facts and boundaries. Earlier replies
@@ -735,6 +737,7 @@ def _repair_messages(
             "cat_ownership_boundary", "cat_ownership_correction", "unsupported_cat_event",
             "fixed_identity_reassertion", "confirmed_fact_recall", "unsupported_coworker_event",
             "unsupported_event_speculation",
+            "unsupported_in_person_claim", "unsupported_recent_location",
             "active_guard_acknowledgement", "casual_chat_no_tasks",
             "instruction_echo", "private_detail_leak",
         )

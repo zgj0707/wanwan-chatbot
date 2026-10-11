@@ -364,7 +364,10 @@ def handle_turn(
                         request.text,
                         text,
                         guard_active=guard_active,
-                        world_events=context["events"],
+                        world_events=[
+                            event for event in context["events"] if event.get("id") in bundle.event_ids
+                        ],
+                        character_time=local_time.character_time,
                         confirmed_facts=[
                             fact for fact in memory_facts if fact.get("id") in bundle.fact_ids
                         ],
