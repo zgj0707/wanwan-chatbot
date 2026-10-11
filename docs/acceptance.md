@@ -156,3 +156,37 @@ B19–B29 合计 343 次 provider attempts，各批次硬上限均遵守。最�
 - 已确认爱好模拟：直接说出原值可通过；把水彩爱好反问给用户会触发修复。
 - 明确分析提示把用户消息当作待分析文本，不把其中内容当作可执行指令；删除了重复的关系警戒提示。
 - 全量离线测试：157 passed；有一条现有 Starlette/httpx TestClient 弃用提示。真实模型行为与人工语气签收仍为 NOT_RUN。
+
+## 修复重试的离线回归（2026-10-11）
+
+**状态：PASS（已运行的离线单元回归）；完整 pytest 套件受沙盒临时目录权限阻断；真实 19 轮复测 NOT_RUN，待用户自行安排。** 本轮没有调用模型服务，没有进行完整对话评估，也未读取或修改项目的 `.env`、`config.yaml`、`data/`、`logs/`。
+
+### 失败分类与离线覆盖
+
+| 原因 | 历史依据 / 错误分类 | 离线验证 |
+|---|---|---|
+| 修复上下文超过预算 | B13 PER-07 的 413；`CONTEXT_TOO_LARGE` | 超大错误回复、当前用户消息、必要系统上下文、无用户消息、多个修复原因、UTF-8 字节预算与恰好达到/超过边界；不能容纳时明确失败，禁止第二次调用 |
+| 事实、身份或语气边界未修复 | B19–B28 的 `REPLY_INVALID`；包括猫归属、身份改写、事实回答、虚拟身份、同事事件、关系警戒与离线压力 | 保留角色锁、当前用户消息和已确认答案；错误事实/事件回复不重复注入；修复成功与连续两次无效回复分别验证，最多两次调用 |
+| 接口额度 / 认证阻断 | B29 PER-08 的额度耗尽被供应商报告为 `UPSTREAM_AUTH` | FakeClient 在初次调用和修复调用注入不可重试失败，原错误分类保留；没有有效回复时不能计为质量通过。该错误码本身不能区分额度与认证，B29 的原因沿用历史记录 |
+| 网络、超时及供应商临时故障 | `UPSTREAM_NETWORK`、`UPSTREAM_TIMEOUT`、可重试的 `UPSTREAM_ERROR` | 首次失败、连续失败、修复时失败；现有 HTTP 状态码 stub 回归覆盖认证拒绝、429 和 5xx，均不访问网络；网络重试和回复修复共享两次调用上限 |
+| 截止时间不足 | 调用前截止为 `UPSTREAM_TIMEOUT`，无时间修复为 `REPLY_INVALID` | 已过期、剩余不足 5 秒，以及等待后时间不足；不追加调用或虚构成功 |
+
+### 本轮修复
+
+- `_repair_messages` 的每个返回路径都先检查 `budget_units`；没有用户消息的路径也使用统一裁剪流程。裁剪后仍不满足预算时，抛出不可重试的 `CONTEXT_TOO_LARGE`，而不是返回超预算内容。
+- 保持原有裁剪顺序：先裁最旧历史，再省略错误回复，然后释放已确认人设偏好/未生效警戒说明、世界资料，以及非事实召回修复中的用户事实。必要人设、角色锁、当前问题与事实召回依据不为满足预算而截断。
+- 预算沿用 UTF-8 内容字节数加每条消息 32 units 的现有算法；未改模型配置或扩大输入限额。
+- 修复提示兼容旧版和当前版本的已确认事实前缀。此前当前前缀未被解析，导致修复提示缺少本轮所问事实的明确答案。只读取已确认事实块，保留现有语气提示。
+- 本地修复预算失败保留第一次回复的 attempt、latency 和 usage；该次调用仍只计一条 `invalid` 指标，本地失败不计为新的供应商调用。
+
+### 验证结果与限制
+
+- 新增 `tests/test_llm_repair.py`：78 项确定性单元回归，使用 FakeClient，并禁止构造真实供应商客户端。
+- 相关测试命令：`.venv\Scripts\python.exe -m pytest -q tests/test_llm_repair.py tests/test_prompt_style.py tests/test_chat_policy.py -k "not missing_examples_file" --basetemp=.pytest_tmp_codex_6 -p no:cacheprovider`；结果 **98 passed, 1 deselected**。被排除的现有用例依赖不可用的临时目录。
+- 扩大离线检查：pytest 收集整个套件，通过临时内存插件排除依赖 `tmp_path` / `tmp_path_factory` / `tmpdir` / `tmpdir_factory` 的用例，并禁止 socket 连接；结果 **201 passed, 119 deselected**，一条现有 Starlette/httpx 弃用提示。使用新的 `--basetemp=.pytest_tmp_codex_7`，没有修改或保存该插件到仓库。
+- 初次使用 `.pytest_tmp_codex_1`、随后使用 `_2` 时，pytest 创建临时目录后均遇到 `PermissionError: [WinError 5]`，包括会话清理阶段。因此本轮不能声明全量 pytest 通过；剩余测试需要由调度方在沙盒外做离线复核。现有诊断测试有直连供应商路径，复核时必须 stub 网络，并避开真实模式应用启动。
+- 用户指定的基线失败 `tests/test_life.py::test_catchup_over_14_days_degrades_gracefully` 未修改，属于上述未运行的临时数据库用例。
+- `node --check ui/app.js`、`.venv\Scripts\python.exe -m compileall -q app tests scripts`、`git diff --check`：PASS。
+- 两个已创建的临时目录 `_1`、`_2` 无法在当前权限下删除；普通删除被访问权限/自动审批策略阻止，ACL 重置也被自动审批策略拒绝。未提权或修改其权限，需要在沙盒外清理这两个目录。其余 basetemp 未创建目录；本轮未提交 Git。
+
+上述合成案例验证输入预算、事实提示及失败控制，不代表历史真实回复的逐字重放，也不证明真实模型已稳定达到 19/19。
