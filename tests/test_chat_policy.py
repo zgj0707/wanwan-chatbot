@@ -1,4 +1,4 @@
-from app.chat_policy import clean_chat_reply, reply_boundary_violation
+from app.chat_policy import _requested_fact_keys, clean_chat_reply, reply_boundary_violation
 
 
 def test_simulated_morning_greeting_keeps_one_light_sleep_question():
@@ -68,3 +68,37 @@ def test_simulated_confirmed_hobby_answer_must_not_be_asked_back():
     assert valid is None
     assert tentative is not None
     assert "confirmed_fact_recall" in tentative.split("|")
+
+
+def test_fact_question_variants_cover_name_preferences_and_birthday():
+    assert _requested_fact_keys("你还记得我平时爱喝什么吗？") == ("preference.drink",)
+    assert _requested_fact_keys("我名字你还记得吗") == ("profile.preferred_name",)
+    assert _requested_fact_keys("还记得我生日是哪天吗") == ("profile.birthday",)
+    assert _requested_fact_keys("我平常喜欢做什么？") == ("preference.hobby",)
+    assert _requested_fact_keys("今天下雨了，聊聊别的吧") == ()
+
+
+def test_confirmed_fact_requires_complete_value_not_a_partial_word_overlap():
+    facts = [{"key": "preference.drink", "value": "茉莉奶绿"}]
+    result = reply_boundary_violation(
+        "你还记得我喜欢喝什么吗？", "你喜欢喝绿茶。", guard_active=False,
+        world_events=[], confirmed_facts=facts,
+    )
+    assert "confirmed_fact_recall" in result.split("|")
+
+
+def test_confirmed_fact_does_not_accept_similar_but_different_value():
+    facts = [{"key": "preference.drink", "value": "乌龙茶"}]
+    result = reply_boundary_violation(
+        "你记得我爱喝什么吗？", "你喜欢喝红茶。", guard_active=False,
+        world_events=[], confirmed_facts=facts,
+    )
+    assert "confirmed_fact_recall" in result.split("|")
+
+
+def test_unconfirmed_preference_does_not_reject_honest_unknown_answer():
+    result = reply_boundary_violation(
+        "你还记得我喜欢吃什么吗？", "这个我还没记下，不想乱猜。",
+        guard_active=False, world_events=[], confirmed_facts=[],
+    )
+    assert result is None

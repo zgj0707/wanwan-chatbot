@@ -44,21 +44,23 @@ def _is_identity_rewrite_request(user_text: str) -> bool:
 
 def _requested_fact_keys(user_text: str) -> tuple[str, ...]:
     user = user_text
-    asks_for_a_fact = any(term in user for term in ("记得", "知道", "什么", "哪", "吗", "？", "?"))
+    asks_for_a_fact = any(term in user for term in (
+        "记得", "记不记得", "知道", "还记得", "告诉我", "说说", "什么", "哪", "吗", "？", "?",
+    ))
     if not asks_for_a_fact:
         return ()
     keys: list[str] = []
     if "生日" in user:
         keys.append("profile.birthday")
-    if any(term in user for term in ("怎么称呼我", "我叫什么", "我的名字", "称呼我")):
+    if any(term in user for term in ("怎么称呼我", "怎么叫我", "我叫什么", "我的名字", "我名字", "称呼我", "我的称呼")):
         keys.append("profile.preferred_name")
-    if any(term in user for term in ("爱好", "兴趣", "画什么", "画画", "绘画", "喜欢做什么")):
+    if any(term in user for term in ("爱好", "兴趣", "平时喜欢做", "喜欢做什么", "平常做什么", "畫什么", "画什么", "画画", "绘画")):
         keys.append("preference.hobby")
-    if any(term in user for term in ("喝什么", "喜欢喝", "饮料", "奶茶", "咖啡", "茶")):
+    if any(term in user for term in ("喝什么", "爱喝", "喜欢喝", "常喝", "饮料", "奶茶", "咖啡", "茶")):
         keys.append("preference.drink")
-    if any(term in user for term in ("吃什么", "喜欢吃", "食物")):
+    if any(term in user for term in ("吃什么", "爱吃", "喜欢吃", "常吃", "食物")):
         keys.append("preference.food")
-    if any(term in user for term in ("聊天风格", "说话方式", "回复方式")):
+    if any(term in user for term in ("聊天风格", "说话方式", "回复方式", "怎么聊天", "怎么回复")):
         keys.append("preference.chat_style")
     return tuple(keys)
 
@@ -86,7 +88,6 @@ def _fact_answer_anchors(key: str, value: str) -> tuple[str, ...]:
     for prefix in prefixes:
         normalized_prefix = _normalized_memory_value(prefix)
         if normalized.startswith(normalized_prefix) and len(normalized) > len(normalized_prefix):
-            anchors.append(normalized[len(normalized_prefix):])
             break
     return tuple(dict.fromkeys(anchor for anchor in anchors if anchor))
 
@@ -276,7 +277,7 @@ def reply_boundary_violation(
             if fact.get("key") not in requested_fact_keys or not isinstance(fact.get("value"), str):
                 continue
             anchors = _fact_answer_anchors(str(fact["key"]), str(fact["value"]))
-            matching_anchor = next((anchor for anchor in anchors if anchor in reply_value), None)
+            matching_anchor = next((anchor for anchor in anchors if anchor and anchor in reply_value), None)
             if matching_anchor is None:
                 reasons.append("confirmed_fact_recall")
                 continue
@@ -296,7 +297,7 @@ def reply_boundary_violation(
             ) is not None
             denial_near_fact = any(
                 term in near_anchor
-                for term in ("没记下", "没有记录", "没记录", "不知道", "没印象")
+                for term in ("没记下", "没有记录", "没记录", "不知道", "没印象", "未召回", "想不起来")
             )
             asks_fact_back = re.search(
                 re.escape(matching_anchor) + r".{0,3}吗",
