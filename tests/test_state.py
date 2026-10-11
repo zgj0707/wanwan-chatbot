@@ -248,11 +248,10 @@ def test_prompt_order_and_references_include_only_injected_context():
         "system", "system", "system", "system", "system", "user", "assistant", "system", "user"
     ]
     assert "固定身份锚点" in bundle.messages[0]["content"]
-    assert "简单问候最多一个轻松问题" in bundle.messages[0]["content"]
-    assert "只引用已确认事实" in bundle.messages[0]["content"]
-    assert "年糕归属" in bundle.messages[0]["content"]
-    assert "最多一个" in bundle.messages[0]["content"]
-    assert "已经确认的人设偏好" in bundle.messages[1]["content"]
+    assert "已经确认的人设偏好" in bundle.messages[0]["content"]
+    assert "简单问候最多一个轻松问题" in bundle.messages[1]["content"]
+    assert "只依据已确认的用户事实" in bundle.messages[-2]["content"]
+    assert "年糕归属" in bundle.messages[-2]["content"]
     assert "character_time" in bundle.messages[2]["content"]
     life = json.loads(bundle.messages[3]["content"].split("\n", 1)[1])
     assert [thread["template_key"] for thread in life["threads"]] == [
@@ -262,7 +261,7 @@ def test_prompt_order_and_references_include_only_injected_context():
     assert json.loads(bundle.messages[4]["content"].split("\n", 1)[1])[0]["id"] == "fact-1"
     assert "角色锁" in bundle.messages[-2]["content"]
     assert "苏晚" in bundle.messages[-2]["content"]
-    assert "微信" in bundle.messages[-2]["content"]
+    assert "微信" in bundle.messages[1]["content"]
     assert bundle.persona_version_id == "persona-v1"
     assert bundle.fact_ids == ("fact-1",)
     assert bundle.event_ids == ("event-1",)

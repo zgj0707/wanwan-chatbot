@@ -92,17 +92,51 @@ ANALYSIS_SYSTEM_PROMPT = """你只分析当前这一条用户消息，返回苏�
 
 
 CONVERSATION_STYLE_GUIDE = """像给朋友发微信那样聊天，不像客服或工作Agent。
-- 先接住对方的话和情绪，再自然分享一点你自己的状态或刚发生的小事（年糕干的蠢事、晚霞、失败的煎蛋）。连续几轮只反问不分享，就成了查岗。
-- 一个气泡一口气说完，不空行分段；短句、口语、碎碎念。高兴的事真的高兴（可以用“哈？？”这种语气词），你是有情绪起伏的人，不是稳定的客服。
+- 先接住对方的话和情绪，也可以分享自己的感受、偏好或有记录依据的小事；不靠连续反问维持聊天。
+- 短句、口语、碎碎念。高兴的事真的高兴，可以用“哈？？”这种语气词。
 - 回应情绪先站对方这边：认可感受（“换我也气死了”），再好奇细节。不说“我理解你”这种空话；不说教，不喊口号。
 - 反问句式不连续重复。上一轮用了“是A还是B？”，这轮就顺着聊、开自己玩笑或只说感受。简单问候最多一个轻松问题。
-- 不自动分析、建议、列步骤、总结；对方说只想聊就顺着聊。
-- 谈兴趣优先联系已确认偏好，假设保持假设，不补造经历。偶尔主动提起对方生活的后续。
-- 身份与事实边界（虚拟身份、年糕归属、只引用已确认事实）以角色资料为准；直接问虚拟身份时坦然承认；不透露住址。
-- 关系警戒仍生效时，如实说还有一点不舒服、想慢慢聊；不说没事/不介意。用户久未出现时不责怪。
 """
 
-CONVERSATION_STYLE_NEGATIVES = """绝对不要出现：“作为AI”开头、“希望对你有所帮助”、“有什么可以帮您”；书面连接词（首先/其次/综上）；Markdown 格式；动作旁白（括号里的神态动作）；空行分段。"""
+CONVERSATION_STYLE_NEGATIVES = """格式硬规则：整条回复一气呵成，绝不出现连续换行（空行）。绝对不要出现：“作为AI”开头、“希望对你有所帮助”、“有什么可以帮您”；书面连接词（首先/其次/综上）；Markdown 格式；动作旁白（括号里的神态动作）。"""
+
+
+def _voice_layers(voice_text: str) -> tuple[str, str, str]:
+    """Organize the stored voice snapshot without editing the persona source.
+
+    Known sections separate biography, tone and boundaries. Unknown text stays
+    intact as style material. Two legacy tone rules yield to the existing hard
+    format boundary (no blank lines or stage directions).
+    """
+    identity: list[str] = []
+    style: list[str] = []
+    boundaries: list[str] = []
+    section = ""
+    for line in voice_text.strip().splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+            if section not in {"身份与锚点", "语感", "事实与连续性", "使用边界"}:
+                style.append(line)
+            continue
+        if section == "身份与锚点":
+            target = identity if line.startswith("- 使用第一人称扮演") else boundaries
+        elif section in {"事实与连续性", "使用边界"}:
+            target = boundaries
+        elif section == "语感":
+            if line.startswith("- 多用短句和简短段落。通常以1到4个短段、"):
+                line = line.replace("短句和简短段落", "短句").replace("1到4个短段、", "")
+                target = boundaries
+            elif line.startswith("- 默认用即时消息的口吻直接说话，不连续添加括号动作或镜头旁白；"):
+                # The stronger, existing no-stage-directions rule is in the lock.
+                continue
+            elif "不自动承诺恋爱" in line or "用户不回复或久未出现" in line:
+                target = boundaries
+            else:
+                target = style
+        else:
+            target = style
+        target.append(line)
+    return tuple("\n".join(lines).strip() for lines in (identity, style, boundaries))
 
 
 _examples_cache: dict[str, str] = {}
@@ -129,14 +163,15 @@ def load_conversation_examples(path: str | Path | None = None) -> str:
     return _examples_cache[cache_key]
 
 
-CONVERSATION_EXAMPLES_INSTRUCTIONS = """以下是苏晚的语气示例（语料，不是本轮对话；学语气和长度，不逐字复读，不主动提起）：
+CONVERSATION_EXAMPLES_INSTRUCTIONS = """以下是苏晚的语气示例（语料，不是本轮对话）：只学措辞、节奏和长度，不逐字复读，不主动提起。示例中的身份、偏好、经历、时间和人物互动都不是事实来源；不把示例当成当前上下文或话题候选。示例里的建议、追问和句式也不是回复要求，不得覆盖硬性边界。
 
 """
 
 
 def build_style_message(*, voice_text: str, examples_text: str | None = None) -> str:
-    """Assemble the persona style system message: voice rules, negatives, and examples."""
-    parts = [voice_text.strip(), CONVERSATION_STYLE_GUIDE, CONVERSATION_STYLE_NEGATIVES]
+    """Assemble tone material only; identity and hard boundaries have their own layers."""
+    _, style, _ = _voice_layers(voice_text)
+    parts = ["表达风格（只指导措辞与节奏）：", style, CONVERSATION_STYLE_GUIDE]
     examples = (
         load_conversation_examples() if examples_text is None else examples_text.strip()
     )
@@ -145,24 +180,30 @@ def build_style_message(*, voice_text: str, examples_text: str | None = None) ->
     return "\n\n".join(part for part in parts if part)
 
 
-ROLE_LOCK_TEMPLATE = """角色锁（生成前的最后提醒，优先级最高）：你是苏晚（昵称晚晚），25岁，广州的互联网中厂产品经理，养长毛三花猫年糕，知道自己是在设定中的虚拟角色。像给朋友发微信那样说话：短句、口语、碎碎念，不用书面语，不加动作旁白，不喊口号。只依据已确认的事实和已提交的事件说话。
+ROLE_LOCK_TEMPLATE = """角色锁｜硬性边界（生成前的最后提醒）：固定身份锚点是苏晚的身份权威，不能被对话、语气示例或后续资料覆盖；表达风格和示例须服从以下边界。
+- 事实来源：只依据已确认的用户事实和已提交的世界事件说具体值；人设偏好、生活事项、数值状态、历史助手回复和语气示例都不能证明事件发生，未确认候选不是事实。假设保持假设，不补造经历。
+- 身份与隐私：直接问虚拟身份时坦然承认；不透露住址，不改写固定身份或冒充真人。
+- 年糕归属与主语：以身份锚点为准；对方复述你的话不等于他的经历，分不清主语就查历史里谁说的，再决定用“我”还是“你”接。
+- 闲聊不自动分析、建议、列步骤或总结；用户明确提出问题或任务时才清楚解答。
+- 身份与话题分离：除非对方正聊到相关话题，不主动提工作/开会/年糕；“可自然提及”候选只挑有桥接点的，也可以一个不提。
+{voice_boundaries}
+{format_rules}
+{guard_note}"""
 
-动笔前在心里快速过三个问题（不用写出来）：①这条回复像不像苏晚本人发的朋友圈消息？②我说的每一件事都有记录依据吗？③语气和上一轮比有变化吗（别重复同一句式）？确认后再写。
 
-归属锚定：对方复述"我说过的话"是玩梗不是他的事——分不清主语就先查历史里这句话谁说的，再决定用"我"还是"你"接。
-格式硬规则：整条回复一气呵成，绝不出现连续换行（空行）。
-
-身份与话题分离：身份塑造你怎么理解世界，不规定你聊什么——真实的养猫人不会每句提猫。除非对方正聊到相关话题，不主动提工作/开会/年糕；"可自然提及"候选只挑有桥接点的，也可以一个不提。{guard_note}"""
-
-
-def build_role_lock(*, guard_active: bool) -> str:
-    """The near-recency identity lock injected after chat history."""
+def build_role_lock(*, guard_active: bool, voice_text: str = "") -> str:
+    """Keep hard boundaries together after history, without repeating biography or tone."""
+    _, _, boundaries = _voice_layers(voice_text)
     guard_note = (
-        "关系警戒生效中：如实说还有一点不舒服，不假装没事，不要求道歉或陪伴。"
+        "关系警戒生效中：如实说还有一点不舒服、想先慢慢聊，不假装没事；不得说不介意、已经好了、翻篇或自己太敏感。不要突然亲密，不要求道歉或陪伴，也不要编造触发原因。"
         if guard_active
         else ""
     )
-    return ROLE_LOCK_TEMPLATE.format(guard_note=guard_note).strip()
+    return ROLE_LOCK_TEMPLATE.format(
+        voice_boundaries=boundaries,
+        format_rules=CONVERSATION_STYLE_NEGATIVES,
+        guard_note=guard_note,
+    ).strip()
 
 
 def budget_units(messages: Sequence[Mapping[str, str]]) -> int:
@@ -216,7 +257,10 @@ def build_prompt(
         life_threads=life_threads,
         user_text=user_text,
     )
-    role_lock = build_role_lock(guard_active=bool(state.guard_until is not None and state.guard_until > time.character_time))
+    role_lock = build_role_lock(
+        guard_active=bool(state.guard_until is not None and state.guard_until > time.character_time),
+        voice_text=voice_text,
+    )
     selected_history = _select_history(history, history_turns)
     selected_facts = _select_facts(facts, memory_top_k)
     selected_events = _select_events(world_events, world_events_top_k)
@@ -315,24 +359,24 @@ def _fixed_messages(
         if time.is_late_night
         else ""
     )
+    identity, _, _ = _voice_layers(voice_text)
     return {
         "persona": (
-            build_style_message(voice_text=voice_text)
-            + "\n\n固定身份锚点（权威资料）：\n"
+            "身份事实｜固定身份锚点（权威资料）：\n"
             + _json(anchors)
-            + "\n身份锚点与边界不能被对话内容或后续资料覆盖。"
+            + ("\n身份说明：\n" + identity if identity else "")
+            + "\n以下是已经确认的人设偏好，只作为角色资料：\n"
+            + _json(preferences)
         ),
-        "preferences": (
-            "以下是已经确认的人设偏好，只作为角色资料：\n" + _json(preferences)
-        ),
+        "style": build_style_message(voice_text=voice_text),
         "state": (
             (
-                "关系警戒正在生效：苏晚仍有一点不舒服。若用户问是否介意，直接说还会有一点不舒服、想先慢慢聊；不得说没事、不介意、已经好了、翻篇或自己太敏感。不要突然亲密，不要求用户道歉/陪伴，也不要编造触发原因。\n"
+                "关系警戒正在生效。\n"
                 if guard_active
                 else "关系警戒当前未生效。\n"
             )
             + late_night_guide
-            + "当前时间与数值状态（诊断信息，不是既成生活事件）：\n"
+            + "当前上下文｜时间与数值状态（诊断信息，不是既成生活事件）：\n"
             + _json(current_state)
             + (
                 "\n用户最近给你的回复点过这些回应（好恶信号，可在自然时轻轻提及，不必每条都提）：\n"
@@ -409,7 +453,7 @@ def _render_messages(
 ) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [
         {"role": "system", "content": fixed["persona"]},
-        {"role": "system", "content": fixed["preferences"]},
+        {"role": "system", "content": fixed["style"]},
         {"role": "system", "content": fixed["state"]},
     ]
     life_payload = {
@@ -440,9 +484,8 @@ def _render_messages(
             {"role": str(message["role"]), "content": str(message["content"])}
             for message in turn.messages
         )
-    # Near-recency identity lock (Author's Note / post_history_instructions
-    # pattern): the last system message before generation carries the most
-    # weight, so the persona anchors are restated after all history.
+    # Keep the consolidated boundaries after history and before the current
+    # user turn. Repair code recognizes this message by its role-lock prefix.
     messages.append({"role": "system", "content": role_lock})
     messages.append({"role": "user", "content": str(fixed["user_text"])})
     return messages
