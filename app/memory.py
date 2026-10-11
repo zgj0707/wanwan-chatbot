@@ -26,7 +26,7 @@ FACT_KEYS: tuple[str, ...] = (
 
 # Identity facts are part of how 苏晚 addresses the user and never fade;
 # ordinary preferences slowly lose recall weight when not revisited
-# (MemoryBank-style time × importance decay, gentle: floor is 0.5).
+# (MemoryBank-style time × importance decay, recency floor is 0.6).
 _FACT_IMPORTANCE: dict[str, float] = {
     "profile.preferred_name": 1.0,
     "profile.birthday": 1.0,
@@ -40,6 +40,67 @@ _FACT_IMPORTANCE: dict[str, float] = {
 
 def fact_importance(key: str) -> float:
     return _FACT_IMPORTANCE.get(key, 0.7)
+
+
+IDENTITY_FACT_KEYS = ("profile.preferred_name", "profile.birthday")
+
+# Explicit category cues complement value bigrams (e.g. asking about a birthday
+# without repeating its date). They describe the current query, not a model guess.
+_FACT_TOPIC_CUES = {
+    "profile.preferred_name": ("称呼", "昵称", "名字", "叫我"),
+    "profile.birthday": ("生日", "生辰"),
+    "preference.drink": ("喝", "饮料", "饮品"),
+    "preference.food": ("吃", "食物", "口味"),
+    "preference.hobby": ("爱好", "兴趣"),
+    "preference.chat_style": ("聊天", "说话", "回复"),
+    "plan.personal": ("计划", "打算", "安排"),
+}
+_TOPIC_SCORE = 0.35
+
+
+def fact_rank_key(fact: Mapping[str, Any]) -> tuple[float, float, str]:
+    """One ordering for recall, prompt selection and budget trimming.
+
+    score remains the original Dice similarity. rank_score adds explicit topic
+    relevance, importance and recency; legacy prompt callers keep score semantics.
+    """
+    rank_score = fact.get("rank_score")
+    if rank_score is None:
+        rank_score = float(fact.get("score", 0.0)) * float(fact.get("decay_weight", 1.0))
+    updated = fact.get("updated_at")
+    timestamp = (
+        updated if isinstance(updated, datetime) else parse_db_datetime(updated)
+    ) if updated else None
+    return (-float(rank_score), -timestamp.timestamp() if timestamp else float("inf"), str(fact["id"]))
+
+
+def select_ranked_facts(
+    facts: Sequence[Mapping[str, Any]], top_k: int,
+) -> list[Mapping[str, Any]]:
+    """Reserve identity coverage, then fill with the best ordinary matches.
+
+    Both identities survive ordinary preferences whenever at least two slots
+    exist. With one slot, the address/name wins; output still follows rank order.
+    """
+    if top_k <= 0:
+        return []
+    ranked = sorted(
+        (fact for fact in facts if fact.get("status", "active") == "active"),
+        key=fact_rank_key,
+    )
+    protected = [
+        fact for key in IDENTITY_FACT_KEYS for fact in ranked if fact["key"] == key
+    ][:top_k]
+    protected_ids = {fact["id"] for fact in protected}
+    selected = protected + [fact for fact in ranked if fact["id"] not in protected_ids][:top_k - len(protected)]
+    return sorted(selected, key=fact_rank_key)
+
+
+def lowest_priority_fact_index(facts: Sequence[Mapping[str, Any]]) -> int:
+    # Preferences yield to both identities under budget pressure; name yields last.
+    ordinary = [i for i, fact in enumerate(facts) if fact["key"] not in IDENTITY_FACT_KEYS]
+    non_name = [i for i, fact in enumerate(facts) if fact["key"] != "profile.preferred_name"]
+    return max(ordinary or non_name or list(range(len(facts))), key=lambda i: fact_rank_key(facts[i]))
 
 _SENSITIVE_PATTERNS = (
     re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE),
@@ -176,17 +237,27 @@ def retrieve_facts(
     top_k: int = 5,
     *,
     now: datetime | None = None,
+    debug: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """Return validated recall rows; optional debug explains every candidate.
+
+    Debug is local, carries no fact values, and is never persisted or sent to the
+    model. Invalid active rows still invalidate the entire index as before.
+    """
     if not isinstance(query, str):
         raise MemoryDataUnavailable("memory query is invalid")
     if not 1 <= top_k <= 5:
         raise ValueError("top_k must be between 1 and 5")
     query_grams = character_bigrams(query)
+    normalized_query = normalize_memory_text(query)
+    now = now or datetime.now(timezone.utc)
     validated: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     try:
         for fact in facts:
             if fact.get("status", "active") != "active":
+                excluded.append({"id": fact.get("id"), "key": fact.get("key"), "selected": False, "reason": "inactive"})
                 continue
             fact_id = fact.get("id")
             parsed_id = UUID(str(fact_id))
@@ -238,23 +309,39 @@ def retrieve_facts(
         raise MemoryDataUnavailable("active memory rows are invalid") from exc
 
     for fact in validated:
-        # Gentle recency decay on top of importance: an ordinary preference
-        # untouched for weeks ranks below a fresh one with the same similarity,
-        # but nothing is ever deleted or hidden outright.
-        fact["decay_weight"] = fact["importance"] * _recency_factor(
+        identity = fact["key"] in IDENTITY_FACT_KEYS
+        recency = 1.0 if identity else _recency_factor(
             fact["last_prompt_time"], fact["updated_at"], now
         )
-    matches = [fact for fact in validated if fact["score"] > 0]
-    matches.sort(key=lambda fact: fact["id"])
-    matches.sort(key=lambda fact: fact["updated_at"], reverse=True)
-    matches.sort(key=lambda fact: (fact["score"] * fact["decay_weight"]), reverse=True)
-    selected = matches[:top_k]
-    preferred = next((fact for fact in validated if fact["key"] == "profile.preferred_name"), None)
-    if preferred is not None and all(fact["id"] != preferred["id"] for fact in selected):
-        if len(selected) >= top_k:
-            selected[-1] = preferred
-        else:
-            selected.append(preferred)
+        topic_cues = [cue for cue in _FACT_TOPIC_CUES[fact["key"]] if cue in normalized_query]
+        topic_score = _TOPIC_SCORE if topic_cues else 0.0
+        fact["decay_weight"] = fact["importance"] * recency
+        fact["rank_score"] = max(fact["score"], topic_score) * fact["decay_weight"]
+        fact["recall_debug"] = {
+            "id": fact["id"], "key": fact["key"],
+            "kind": "identity" if identity else "ordinary",
+            "similarity": fact["score"], "topic_cues": topic_cues,
+            "topic_score": topic_score, "importance": fact["importance"],
+            "recency_factor": recency, "rank_score": fact["rank_score"],
+        }
+    eligible = [fact for fact in validated if fact["rank_score"] > 0 or fact["key"] in IDENTITY_FACT_KEYS]
+    selected = select_ranked_facts(eligible, top_k)
+    selected_ranks = {fact["id"]: i + 1 for i, fact in enumerate(selected)}
+    for fact in validated:
+        selected_rank = selected_ranks.get(fact["id"])
+        identity = fact["key"] in IDENTITY_FACT_KEYS
+        fact["recall_debug"].update({
+            "selected": selected_rank is not None, "rank": selected_rank,
+            "reason": (
+                "identity_coverage" if selected_rank is not None and identity
+                else "relevance_match" if selected_rank is not None
+                else "identity_capacity" if identity
+                else "no_relevance" if fact["rank_score"] == 0
+                else "capacity_after_identity_coverage"
+            ),
+        })
+    if debug is not None:
+        debug.extend([dict(fact["recall_debug"]) for fact in sorted(validated, key=fact_rank_key)] + excluded)
     return [{**fact, "updated_at": fact["updated_at"].isoformat()} for fact in selected]
 
 

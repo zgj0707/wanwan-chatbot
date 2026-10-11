@@ -8,6 +8,7 @@ from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import Field, StrictInt, StrictStr, ValidationError, field_validator
 
+from app.memory import lowest_priority_fact_index, select_ranked_facts
 from app.models import FactKey, StrictModel
 from app.state import StateProjection, TimeContext, mood_label, parse_db_datetime
 
@@ -420,21 +421,7 @@ def _valid_history(turn: HistoryTurn) -> bool:
 
 
 def _select_facts(facts: Sequence[Mapping[str, Any]], memory_top_k: int) -> list[Mapping[str, Any]]:
-    active = [fact for fact in facts if fact.get("status", "active") == "active"]
-    ranked = sorted(active, key=_identifier)
-    ranked = sorted(ranked, key=lambda fact: str(fact.get("updated_at", "")), reverse=True)
-    ranked = sorted(ranked, key=lambda fact: float(fact.get("score", 0.0)), reverse=True)
-    selected = ranked[: max(0, memory_top_k)]
-    preferred = next(
-        (fact for fact in ranked if fact.get("key") == "profile.preferred_name"),
-        None,
-    )
-    if preferred is not None and preferred not in selected and memory_top_k > 0:
-        if len(selected) >= memory_top_k:
-            selected[-1] = preferred
-        else:
-            selected.append(preferred)
-    return selected
+    return select_ranked_facts(facts, memory_top_k)
 
 
 def _select_events(events: Sequence[Mapping[str, Any]], world_events_top_k: int) -> list[Mapping[str, Any]]:
@@ -523,18 +510,7 @@ def _event_data(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _lowest_priority_fact_index(facts: Sequence[Mapping[str, Any]]) -> int:
-    nonpreferred = [
-        index for index, fact in enumerate(facts) if fact.get("key") != "profile.preferred_name"
-    ]
-    candidates = nonpreferred or list(range(len(facts)))
-    return min(
-        candidates,
-        key=lambda index: (
-            float(facts[index].get("score", 0.0)),
-            str(facts[index].get("updated_at", "")),
-            _identifier(facts[index]),
-        ),
-    )
+    return lowest_priority_fact_index(facts)
 
 
 def _identifier(item: Mapping[str, Any]) -> str:

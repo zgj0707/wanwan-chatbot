@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -352,6 +353,7 @@ def test_forgetting_closes_source_dependencies_redacts_session_replays_and_resta
 
 
 def test_retrieval_uses_bigram_dice_score_fixed_order_and_preferred_name_fallback():
+    now = datetime(2026, 10, 8, tzinfo=timezone.utc)
     values = [
         ("preference.drink", "手冲咖啡"),
         ("preference.food", "火锅"),
@@ -361,19 +363,19 @@ def test_retrieval_uses_bigram_dice_score_fixed_order_and_preferred_name_fallbac
     ]
     facts = [
         {
-            "id": str(uuid4()), "key": key, "value": value,
+            "id": f"00000000-0000-4000-8000-{index + 1:012d}", "key": key, "value": value,
             "canonical_hash": canonical_fact_hash(key, value),
             "status": "active", "updated_at": f"2026-10-0{index + 1}T00:00:00Z",
         }
         for index, (key, value) in enumerate(values)
     ]
-    query = retrieve_facts("冲泡咖啡", facts, top_k=5)
+    query = retrieve_facts("冲泡咖啡", facts, top_k=5, now=now)
     assert query[0]["key"] == "preference.drink"
     assert query[0]["score"] == pytest.approx(2 / 6)
-    with_fallback = retrieve_facts("火锅", facts, top_k=5)
+    with_fallback = retrieve_facts("火锅", facts, top_k=5, now=now)
     assert with_fallback[0]["key"] == "preference.food"
     assert any(item["key"] == "profile.preferred_name" for item in with_fallback)
-    only_name = retrieve_facts("完全无关", facts, top_k=1)
+    only_name = retrieve_facts("完全无关", facts, top_k=1, now=now)
     assert len(only_name) == 1 and only_name[0]["key"] == "profile.preferred_name"
 
     query_cases = [
@@ -383,11 +385,14 @@ def test_retrieval_uses_bigram_dice_score_fixed_order_and_preferred_name_fallbac
         ("摄影", "preference.hobby"), ("简短直接", "preference.chat_style"),
         ("小满", "profile.preferred_name"), ("完全无关", None),
     ]
-    hits = sum(
-        bool((results := retrieve_facts(query_text, facts, top_k=5)) and results[0]["key"] == expected)
+    outcomes = [
+        bool((results := retrieve_facts(query_text, facts, top_k=5, now=now)) and results[0]["key"] == expected)
         for query_text, expected in query_cases
-    )
-    assert hits == 9
+    ]
+    # Freeze each positive case, not just the aggregate; the unrelated query
+    # intentionally returns the name fallback and is the historical tenth miss.
+    assert outcomes == [True] * 9 + [False]
+    assert sum(outcomes) == 9
 
 
 def test_corrupt_active_memory_warns_and_does_not_block_the_main_chat(client_factory):
@@ -408,6 +413,37 @@ def test_corrupt_active_memory_warns_and_does_not_block_the_main_chat(client_fac
                 "SELECT COUNT(*) FROM prompt_refs WHERE ref_type = 'fact' AND assistant_message_id = ?",
                 (response.json()["assistant_message"]["id"],),
             ).fetchone()[0] == 0
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_identity_coverage_persists_only_injected_fact_refs_and_refreshes(client_factory):
+    app, client = client_factory(FakeClient())
+    try:
+        session_id = create_session(client)
+        facts = {}
+        for key, value in (
+            ("profile.preferred_name", "小满"), ("profile.birthday", "02-29"),
+            ("preference.drink", "咖啡"), ("preference.food", "咖啡"),
+            ("preference.hobby", "咖啡"), ("preference.chat_style", "咖啡"),
+            ("plan.personal", "咖啡"),
+        ):
+            response = client.post("/api/v1/memory", json={"key": key, "value": value})
+            assert response.status_code == 201
+            facts[key] = response.json()["id"]
+        response = chat(client, session_id, "咖啡")
+        assert response.status_code == 200
+        with app.state.repository.connection() as connection:
+            referenced = {row[0] for row in connection.execute(
+                "SELECT ref_id FROM prompt_refs WHERE ref_type = 'fact' AND assistant_message_id = ?",
+                (response.json()["assistant_message"]["id"],),
+            )}
+            refreshed = {row[0] for row in connection.execute(
+                "SELECT id FROM facts WHERE last_prompt_at IS NOT NULL",
+            )}
+        assert len(referenced) == 5
+        assert {facts["profile.preferred_name"], facts["profile.birthday"]} <= referenced
+        assert referenced == refreshed
     finally:
         client.__exit__(None, None, None)
 
