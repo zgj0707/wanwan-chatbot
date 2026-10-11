@@ -13,7 +13,7 @@ from app.clock import FakeClock
 from app.config import AppConfig, load_config
 from app.llm import FakeClient, FakeOutcome
 from app.main import create_app
-from app.pipeline import request_hash
+from app.pipeline import _initiative_failure_kind, request_hash
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -316,6 +316,27 @@ def test_initiative_success_is_one_assistant_message_replays_and_obeys_cooldown(
     assert waiting["reason"] == "WAITING_USER"
 
 
+def test_initiative_failure_kind_labels_network_generation_and_server():
+    assert _initiative_failure_kind("UPSTREAM_NETWORK") == "network"
+    assert _initiative_failure_kind("UPSTREAM_TIMEOUT") == "network"
+    assert _initiative_failure_kind("REPLY_INVALID") == "generation"
+    assert _initiative_failure_kind("UPSTREAM_ERROR") == "generation"
+    assert _initiative_failure_kind("DATA_CORRUPT") == "server"
+
+
+def test_initiative_generation_failure_is_classified_and_retryable(client_factory):
+    fake = FakeClient({"world": world_result(), "chat": "太短"}, clock=FakeClock(SATURDAY_NOON_GUANGZHOU))
+    client, _app, _fake, _clock = client_factory(fake)
+    seed_photo_events(client, _clock, 1)
+    session_id = create_session(client)
+    failed = client.post("/api/v1/initiative", json={"operation_id": str(uuid4()), "session_id": session_id}).json()
+    assert failed["status"] == "failed"
+    assert failed["reason"] == "MODEL_FAILED"
+    assert failed["error_code"] == "REPLY_INVALID"
+    assert failed["failure_kind"] == "generation"
+    assert failed["retryable"] is True
+
+
 def test_initiative_failure_does_not_consume_cooldown_and_replay_keeps_timing(client_factory):
     failed_chat = FakeOutcome(error_code="UPSTREAM_TIMEOUT", retryable=True, latency_ms=3)
     fake = FakeClient(
@@ -332,6 +353,9 @@ def test_initiative_failure_does_not_consume_cooldown_and_replay_keeps_timing(cl
     assert (failed["status"], failed["sent"], failed["reason"], failed["call_count"]) == (
         "failed", False, "MODEL_FAILED", 1
     )
+    assert failed["error_code"] == "UPSTREAM_TIMEOUT"
+    assert failed["failure_kind"] == "network"
+    assert failed["retryable"] is True
     assert failed["world_update_ms"] >= 0
     assert app.state.repository.get_meta("initiative_last_at") == before
 

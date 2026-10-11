@@ -417,6 +417,22 @@ def handle_turn(
         guard.__exit__(None, None, None)
 
 
+_INITIATIVE_NETWORK_ERROR_CODES = frozenset({"UPSTREAM_NETWORK", "UPSTREAM_TIMEOUT", "DEADLINE_EXCEEDED"})
+_INITIATIVE_GENERATION_ERROR_CODES = frozenset(
+    {"UPSTREAM_ERROR", "REPLY_INVALID", "ANALYSIS_INVALID", "INPUT_BUDGET_EXCEEDED"}
+)
+
+
+def _initiative_failure_kind(error_code: str | None) -> str:
+    if error_code in _INITIATIVE_NETWORK_ERROR_CODES:
+        return "network"
+    if error_code in _INITIATIVE_GENERATION_ERROR_CODES or (
+        error_code is not None and error_code.startswith("UPSTREAM")
+    ):
+        return "generation"
+    return "server"
+
+
 def _initiative_response(repository: Repository, operation: dict, *, replayed: bool) -> dict:
     try:
         result_meta = json.loads(operation["result_meta_json"])
@@ -433,6 +449,12 @@ def _initiative_response(repository: Repository, operation: dict, *, replayed: b
         "COOLDOWN", "NO_RECENT_EVENT", "WAITING_USER", "MODEL_FAILED",
     }:
         reason = "MODEL_FAILED" if operation["status"] in {"failed", "interrupted"} else None
+    error_code = operation.get("error_code")
+    failure_kind: str | None = None
+    retryable = False
+    if operation["status"] in {"failed", "interrupted"}:
+        failure_kind = _initiative_failure_kind(error_code)
+        retryable = problem_for_code(error_code or "UPSTREAM_ERROR").retryable
     return {
         "operation_id": operation["id"],
         "status": operation["status"],
@@ -444,6 +466,9 @@ def _initiative_response(repository: Repository, operation: dict, *, replayed: b
         "call_count": operation["call_count"],
         "world_update_ms": max(0, result_meta.get("world_update_ms", 0)) if isinstance(result_meta.get("world_update_ms", 0), int) else 0,
         "replayed": replayed,
+        "error_code": error_code,
+        "failure_kind": failure_kind,
+        "retryable": retryable,
     }
 
 

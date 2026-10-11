@@ -1089,6 +1089,15 @@
   }
 
   /* ── 主动开场 ─────────────────────────────── */
+  const INITIATIVE_SKIP_REASONS = new Set([
+    "DISABLED",
+    "QUIET_HOURS",
+    "GUARD_ACTIVE",
+    "LOW_ENERGY",
+    "COOLDOWN",
+    "NO_RECENT_EVENT",
+    "WAITING_USER",
+  ]);
   function clearInitiativeNotice() {
     els.initiativeNotice.replaceChildren();
     els.initiativeNotice.classList.add("hidden");
@@ -1106,6 +1115,34 @@
     appendTypingDots(els.initiativeNotice);
     els.initiativeNotice.classList.remove("hidden", "error");
   }
+  function initiativeFailureCopy(data) {
+    if (data?.failure_kind === "network") return "连接模型服务时出问题，这次主动开场没能生成。";
+    if (data?.failure_kind === "generation") return "晚晚这次没能开好场，可以稍后再试。";
+    return "主动开场暂时没能完成。";
+  }
+  function showInitiativeFailure(message, { retryable, onRetry }) {
+    els.initiativeNotice.replaceChildren();
+    els.initiativeNotice.append(make("span", "initiative-failure-text", message));
+    if (retryable && typeof onRetry === "function") {
+      const retry = make("button", "text-button initiative-retry", "再试一次");
+      retry.type = "button";
+      retry.addEventListener("click", () => {
+        clearInitiativeNotice();
+        onRetry();
+      });
+      els.initiativeNotice.append(retry);
+    }
+    els.initiativeNotice.classList.remove("hidden");
+    els.initiativeNotice.classList.add("error");
+  }
+  function isInitiativePolicySkip(data) {
+    return Boolean(
+      data
+        && !data.sent
+        && data.status === "succeeded"
+        && INITIATIVE_SKIP_REASONS.has(data.reason),
+    );
+  }
   async function requestInitiative(sessionId, generation) {
     if (!sessionId || pending || activeSession?.archived) return;
     initiativePendingSessions.add(sessionId);
@@ -1113,6 +1150,10 @@
       showInitiativeTyping();
       renderPending();
     }
+    const retryInitiative = () => {
+      if (generation !== initiativeGeneration || activeSessionId !== sessionId) return;
+      void requestInitiative(sessionId, generation);
+    };
     try {
       const { data } = await request("/initiative", {
         method: "POST",
@@ -1124,13 +1165,23 @@
         clearInitiativeNotice();
         appendMessage(data.assistant_message);
         await loadSessionsListOnly();
+      } else if (isInitiativePolicySkip(data)) {
+        clearInitiativeNotice();
+      } else if (data.status === "failed" || data.reason === "MODEL_FAILED") {
+        showInitiativeFailure(initiativeFailureCopy(data), {
+          retryable: Boolean(data.retryable),
+          onRetry: retryInitiative,
+        });
       } else {
         clearInitiativeNotice();
       }
-    } catch {
-      if (generation === initiativeGeneration && activeSessionId === sessionId) {
-        clearInitiativeNotice();
-      }
+    } catch (error) {
+      if (generation !== initiativeGeneration || activeSessionId !== sessionId) return;
+      const api = error.api || {};
+      showInitiativeFailure(api.message || error.message || "网络异常，主动开场请求没发出去。", {
+        retryable: api.retryable !== false,
+        onRetry: retryInitiative,
+      });
     } finally {
       initiativePendingSessions.delete(sessionId);
       if (activeSessionId === sessionId) renderPending();
