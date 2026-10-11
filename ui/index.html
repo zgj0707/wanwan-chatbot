@@ -91,15 +91,15 @@
   <div id="settings-overlay" class="settings-overlay hidden" role="dialog" aria-modal="true" aria-label="设置中心">
     <header class="settings-topbar">
       <div class="settings-tabs" role="tablist" aria-label="设置中心页面">
-        <button class="settings-tab active" type="button" data-view="memory-view" role="tab">记忆管理</button>
-        <button class="settings-tab" type="button" data-view="persona-view" role="tab">晚晚档案</button>
-        <button class="settings-tab" type="button" data-view="materials-view" role="tab">素材库</button>
-        <button class="settings-tab" type="button" data-view="diagnostics-view" role="tab">设置与诊断</button>
+        <button id="settings-tab-memory" class="settings-tab active" type="button" data-view="memory-view" role="tab" aria-selected="true" aria-controls="memory-view" tabindex="0">记忆管理</button>
+        <button id="settings-tab-persona" class="settings-tab" type="button" data-view="persona-view" role="tab" aria-selected="false" aria-controls="persona-view" tabindex="-1">晚晚档案</button>
+        <button id="settings-tab-materials" class="settings-tab" type="button" data-view="materials-view" role="tab" aria-selected="false" aria-controls="materials-view" tabindex="-1">素材库</button>
+        <button id="settings-tab-diagnostics" class="settings-tab" type="button" data-view="diagnostics-view" role="tab" aria-selected="false" aria-controls="diagnostics-view" tabindex="-1">设置与诊断</button>
       </div>
       <button id="close-settings" class="ghost-button" type="button">返回对话 ✕</button>
     </header>
     <div class="settings-body">
-      <section id="memory-view" class="view management-view" aria-label="记忆管理">
+      <section id="memory-view" class="view management-view" role="tabpanel" aria-labelledby="settings-tab-memory" tabindex="0">
         <header class="management-header"><h1>记忆管理</h1><p>自动识别的事实先等待确认。修改会创建新版本；忘记会移除相关来源内容。</p></header>
         <div id="manager-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <form id="manual-memory-form" class="panel-card manual-memory-form">
@@ -138,7 +138,7 @@
         </section>
       </section>
 
-      <section id="persona-view" class="view management-view hidden" aria-label="晚晚档案">
+      <section id="persona-view" class="view management-view hidden" role="tabpanel" aria-labelledby="settings-tab-persona" aria-hidden="true" tabindex="-1">
         <header class="management-header"><h1>晚晚档案</h1><p>固定身份资料只读。可确认的喜好会以新版本保存，不会改写身份锚点。</p></header>
         <div id="persona-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <div id="persona-details" class="persona-grid"></div>
@@ -159,7 +159,7 @@
         </section>
       </section>
 
-      <section id="materials-view" class="view management-view hidden" aria-label="素材库">
+      <section id="materials-view" class="view management-view hidden" role="tabpanel" aria-labelledby="settings-tab-materials" aria-hidden="true" tabindex="-1">
         <header class="management-header"><h1>素材库</h1><p>聊天中收藏的候选内容。按内容支柱归档，供抖音选题使用；来源消息被"忘记"后会自动失效。</p></header>
         <div id="materials-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <div class="panel-card materials-toolbar-card">
@@ -174,7 +174,7 @@
         <div id="materials-list" class="card-list"></div>
       </section>
 
-      <section id="diagnostics-view" class="view management-view hidden" aria-label="设置与诊断">
+      <section id="diagnostics-view" class="view management-view hidden" role="tabpanel" aria-labelledby="settings-tab-diagnostics" aria-hidden="true" tabindex="-1">
         <header class="management-header"><h1>设置与诊断</h1><p>「测试连通性」会向对应配置发送一次短请求并可能产生少量费用；测试读取的是已保存的本机配置，保存后无需重启即可测试。</p></header>
         <div id="diagnostics-notice" class="manager-notice hidden" role="status" aria-live="polite"></div>
         <section class="panel-card" id="api-settings-card">

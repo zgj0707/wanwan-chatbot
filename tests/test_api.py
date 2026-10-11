@@ -129,3 +129,16 @@ def test_operation_status_rebuilds_messages_from_database(tmp_path: Path):
         assert status.json()["user_message"] == posted.json()["user_message"]
     finally:
         client.__exit__(None, None, None)
+
+
+def test_frontend_settings_modal_focus_and_tab_keyboard():
+    html = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
+    source = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+    assert 'role="tablist"' in html and "aria-controls=" in html
+    assert 'aria-selected="true"' in html and 'tabindex="-1"' in html
+    assert "syncSettingsTabA11y" in source
+    assert "trapSettingsFocus" in source
+    assert "handleSettingsTablistKeydown" in source
+    assert "settingsFocusReturn" in source
+    assert "els.forgetDialog?.open" in source
+    assert "restoreFocus: false" in source

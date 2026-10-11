@@ -117,6 +117,7 @@
   let isComposing = false;
   let currentView = "chat-view";
   let forgetFactId = null;
+  let settingsFocusReturn = null;
   let moodState = null;
   let initiativeGeneration = 0;
   /* 爪印/猫用内联 SVG（CSP 合规：不引外部资源）*/
@@ -379,23 +380,102 @@
     }
   }
 
-  /* ── 设置中心（全屏层，tab 切换）──────────── */
+  /* ── 设置中心（全屏层，tab 切换 + 焦点/键盘）── */
+  const SETTINGS_FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function isSettingsOpen() {
+    return Boolean(els.settingsOverlay && !els.settingsOverlay.classList.contains("hidden"));
+  }
+
+  function syncSettingsTabA11y(viewId) {
+    for (const tab of els.settingsTabs) {
+      const selected = tab.dataset.view === viewId;
+      tab.classList.toggle("active", selected);
+      tab.setAttribute("aria-selected", selected ? "true" : "false");
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    for (const view of els.views) {
+      const visible = view.id === viewId;
+      view.classList.toggle("hidden", !visible);
+      view.setAttribute("aria-hidden", visible ? "false" : "true");
+      view.tabIndex = visible ? 0 : -1;
+    }
+  }
+
+  function getSettingsFocusables() {
+    if (!isSettingsOpen()) return [];
+    return [...els.settingsOverlay.querySelectorAll(SETTINGS_FOCUSABLE)].filter((node) => {
+      if (node.disabled || node.closest(".hidden")) return false;
+      return node.getClientRects().length > 0;
+    });
+  }
+
+  function focusActiveSettingsTab() {
+    const active = els.settingsTabs.find((tab) => tab.dataset.view === currentView);
+    (active || els.closeSettings)?.focus();
+  }
+
+  function handleSettingsTablistKeydown(event) {
+    const tabs = els.settingsTabs;
+    if (!tabs.length) return;
+    const key = event.key;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return;
+    const current = tabs.indexOf(event.currentTarget);
+    if (current === -1) return;
+    event.preventDefault();
+    let next = current;
+    if (key === "Home") next = 0;
+    else if (key === "End") next = tabs.length - 1;
+    else if (key === "ArrowRight" || key === "ArrowDown") next = (current + 1) % tabs.length;
+    else next = (current - 1 + tabs.length) % tabs.length;
+    const tab = tabs[next];
+    tab.focus();
+    switchSettingsTab(tab.dataset.view);
+  }
+
+  function trapSettingsFocus(event) {
+    if (event.key !== "Tab" || !isSettingsOpen() || els.forgetDialog?.open) return;
+    const focusables = getSettingsFocusables();
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey) {
+      if (active === first || !els.settingsOverlay.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+    if (active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function switchSettingsTab(viewId) {
     currentView = viewId;
-    for (const tab of els.settingsTabs) tab.classList.toggle("active", tab.dataset.view === viewId);
-    for (const view of els.views) view.classList.toggle("hidden", view.id !== viewId);
+    syncSettingsTabA11y(viewId);
     if (viewId === "memory-view") void loadMemoryView();
     if (viewId === "persona-view") void loadPersonaView();
     if (viewId === "materials-view") void loadMaterialsView();
     if (viewId === "diagnostics-view") { void loadDiagnosticsView(); void loadApiSettingsView(); void loadCcswitchProviders(); }
   }
-  function openSettings(viewId) {
+  function openSettings(viewId, focusReturnEl) {
+    settingsFocusReturn = focusReturnEl || document.activeElement;
     els.settingsOverlay.classList.remove("hidden");
     switchSettingsTab(viewId);
+    focusActiveSettingsTab();
   }
-  function closeSettings() {
+  function closeSettings(options = {}) {
+    const shouldRestore = options.restoreFocus !== false;
     els.settingsOverlay.classList.add("hidden");
     currentView = "chat-view";
+    if (shouldRestore && settingsFocusReturn && typeof settingsFocusReturn.focus === "function" && document.contains(settingsFocusReturn)) {
+      settingsFocusReturn.focus();
+    }
+    settingsFocusReturn = null;
   }
 
   /* ── 素材库（顺手收藏）────────────────────── */
@@ -1441,7 +1521,7 @@
     activeSessionId = session.id;
     activeSession = session;
     nextBeforeId = null;
-    if (els.settingsOverlay && !els.settingsOverlay.classList.contains("hidden")) closeSettings();
+    if (els.settingsOverlay && !els.settingsOverlay.classList.contains("hidden")) closeSettings({ restoreFocus: false });
     els.title.textContent = session.title;
     els.archive.disabled = Boolean(session.archived);
     els.archive.title = session.archived ? "已归档" : "归档对话";
@@ -2395,6 +2475,7 @@ ${text}`;
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!els.shortcutSheet.classList.contains("hidden")) { els.shortcutSheet.classList.add("hidden"); return; }
+    if (els.forgetDialog?.open) return;
     if (!els.settingsOverlay.classList.contains("hidden")) { closeSettings(); return; }
     if (document.activeElement === els.input && els.input.value) {
       els.input.value = "";
@@ -2421,11 +2502,15 @@ ${text}`;
   });
   els.cancelWait.addEventListener("click", cancelWait);
   els.queryOperation.addEventListener("click", () => { void checkOperation(true); });
-  els.openSettings.addEventListener("click", () => { openSettings("memory-view"); });
-  els.closeSettings.addEventListener("click", closeSettings);
+  els.openSettings.addEventListener("click", () => { openSettings("memory-view", els.openSettings); });
+  els.closeSettings.addEventListener("click", () => { closeSettings(); });
+  els.settingsOverlay.addEventListener("keydown", trapSettingsFocus);
+  for (const tab of els.settingsTabs) {
+    tab.addEventListener("keydown", handleSettingsTablistKeydown);
+  }
   for (const tab of [...els.settingsTabs, ...els.settingsEntries]) {
     tab.addEventListener("click", () => {
-      if (tab.classList.contains("settings-entry")) openSettings(tab.dataset.view);
+      if (tab.classList.contains("settings-entry")) openSettings(tab.dataset.view, tab);
       else switchSettingsTab(tab.dataset.view);
     });
   }
