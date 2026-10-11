@@ -2263,9 +2263,81 @@ ${text}`;
     renderPending();
     await sendPending(false);
   }
+  const MOBILE_LAYOUT_MQ = window.matchMedia("(max-width: 900px)");
+  const COMPOSER_TEXT_MAX_PX = 180;
+
+  function getComposerTextMaxPx(viewportHeight) {
+    if (!MOBILE_LAYOUT_MQ.matches || !viewportHeight) return COMPOSER_TEXT_MAX_PX;
+    const topbar = document.querySelector(".chat-panel > .topbar");
+    let reserved = (topbar?.offsetHeight ?? 52) + 56;
+    const footer = els.form?.querySelector(".composer-footer");
+    if (footer) reserved += footer.offsetHeight;
+    if (els.form) {
+      const formStyle = getComputedStyle(els.form);
+      reserved += parseFloat(formStyle.paddingTop) + parseFloat(formStyle.paddingBottom);
+      reserved += parseFloat(formStyle.marginBottom) || 0;
+    }
+    if (els.replyBar && !els.replyBar.classList.contains("hidden")) {
+      reserved += els.replyBar.offsetHeight + 8;
+    }
+    return Math.max(44, Math.min(COMPOSER_TEXT_MAX_PX, Math.floor(viewportHeight - reserved)));
+  }
+
+  function clearLayoutViewportVars() {
+    const root = document.documentElement;
+    root.style.removeProperty("--layout-viewport-height");
+    root.style.removeProperty("--layout-viewport-offset-top");
+    root.style.setProperty("--composer-text-max", `${COMPOSER_TEXT_MAX_PX}px`);
+  }
+
+  function syncLayoutViewport() {
+    if (!MOBILE_LAYOUT_MQ.matches) {
+      clearLayoutViewportVars();
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) {
+      clearLayoutViewportVars();
+      return;
+    }
+    const root = document.documentElement;
+    root.style.setProperty("--layout-viewport-height", `${Math.round(vv.height)}px`);
+    root.style.setProperty("--layout-viewport-offset-top", `${Math.round(vv.offsetTop)}px`);
+    root.style.setProperty("--composer-text-max", `${getComposerTextMaxPx(vv.height)}px`);
+    if (document.activeElement === els.input && isNearBottom()) {
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
+  }
+
+  function bindLayoutViewportSync() {
+    syncLayoutViewport();
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", () => {
+        syncLayoutViewport();
+        resizeInput();
+      });
+      vv.addEventListener("scroll", syncLayoutViewport);
+    }
+    MOBILE_LAYOUT_MQ.addEventListener("change", () => {
+      syncLayoutViewport();
+      resizeInput();
+    });
+    window.addEventListener("resize", () => {
+      syncLayoutViewport();
+      resizeInput();
+    });
+    els.input.addEventListener("focus", () => {
+      syncLayoutViewport();
+      requestAnimationFrame(syncLayoutViewport);
+    });
+  }
+
   function resizeInput() {
     els.input.style.height = "auto";
-    els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
+    const viewportHeight = window.visualViewport?.height;
+    const maxPx = getComposerTextMaxPx(viewportHeight);
+    els.input.style.height = `${Math.min(els.input.scrollHeight, maxPx)}px`;
     updateCharCount();
   }
 
@@ -2551,6 +2623,7 @@ ${text}`;
   renderMoodBackgroundGrid();
   updateBackgroundStatus();
   syncSearchClear();
+  bindLayoutViewportSync();
   resizeInput();
   (async () => {
     if (pending) await checkOperation(false);

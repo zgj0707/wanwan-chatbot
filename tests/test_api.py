@@ -107,6 +107,15 @@ def test_frontend_pending_state_is_attached_to_message_flow():
     assert "停止等待不会取消服务端处理" in source
 
 
+def test_frontend_mobile_viewport_and_composer_layout():
+    css = (ROOT / "ui" / "style.css").read_text(encoding="utf-8")
+    source = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+    assert "--app-height" in css and "100dvh" in css
+    assert "--layout-viewport-height" in css and "safe-area-inset-bottom" in css
+    assert "visualViewport" in source and "syncLayoutViewport" in source
+    assert "getComposerTextMaxPx" in source
+
+
 def test_operation_status_rebuilds_messages_from_database(tmp_path: Path):
     _, client = make_client(tmp_path)
     try:
